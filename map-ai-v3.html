@@ -28,6 +28,12 @@ button:disabled { opacity: .45; cursor: default; }
   .stage { order: -1; }
   .viewport { max-height: 55dvh; }
 }
+
+.brush-controls { display: flex; gap: 8px; align-items: center; }
+.brush-controls[hidden] { display: none; }
+.brush-controls label { margin: 0; }
+.brush-controls input { width: 48px; min-height: 44px; padding: 5px; }
+.brush-controls input[type=number] { width: 72px; }
 </style></head><body>
 <header><div><strong>✦ THIÊN ĐẠO · AI MAP STUDIO V3</strong><br><small>AI bố trí map miễn phí · Ninja & Tu tiên · Xuất Godot 4</small></div><div><a href="map-hd.html">Map Studio V2</a> · <a href="index.html">Trang chủ</a></div></header>
 <div class="app"><aside>
@@ -39,12 +45,15 @@ button:disabled { opacity: .45; cursor: default; }
 <div class="row" style="margin-top:12px"><button class="primary" id="generate">✨ AI bố trí map</button><button id="random">🎲 Seed mới</button></div>
 <details class="hd-panel"><summary>AI tạo ảnh HD</summary><p class="note">Nhập URL backend HTTPS của bạn. Backend nhận POST JSON {prompt,style,width,height} và trả JSON {image_url} hoặc {image_base64}. Không nhập API key vào website.</p>
 <label for="endpoint">Endpoint tạo ảnh AI</label><input id="endpoint" type="url" placeholder="https://your-backend.example/api/generate-image">
-<button id="aiImage" style="margin-top:10px">🎨 Tạo ảnh nền HD bằng AI</button>
-<p class="note">Ảnh tạo được dùng làm lớp nền. Muốn AI vẽ riêng từng asset, cần backend hỗ trợ tách đối tượng và ảnh trong suốt.</p>
+<button id="aiImage" style="margin-top:10px">🎨 AI vẽ toàn bộ bản đồ</button>
+<p class="note">AI vẽ cả khung hình từ mô tả. Bạn có thể vẽ thêm bằng cọ và xuất ảnh PNG. Dữ liệu Godot dùng địa hình và đối tượng của bộ bố trí map.</p>
 </details>
 </aside><main class="stage"><div class="bar"><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
-<div><label for="tool">Công cụ</label><select id="tool"><option value="house">Đặt nhà / công trình</option><option value="tree">Đặt cây</option><option value="rock">Đặt đá</option><option value="enemy">Đặt quái</option><option value="npc">Đặt NPC</option><option value="erase">Xóa đối tượng</option></select></div>
-<button id="pan" aria-pressed="false">Kéo bản đồ</button>
+<div><label for="tool">Công cụ</label><select id="tool"><option value="brush">Cọ vẽ tay</option><option value="house" selected>Đặt nhà / công trình</option><option value="tree">Đặt cây</option><option value="rock">Đặt đá</option><option value="enemy">Đặt quái</option><option value="npc">Đặt NPC</option><option value="erase">Xóa đối tượng</option></select></div>
+<div id="brushControls" class="brush-controls" hidden>
+<label for="brushColor">Màu</label><input id="brushColor" type="color" value="#fbce82">
+<label for="brushSize">Cỡ cọ (px)</label><input id="brushSize" type="number" min="1" max="128" value="12">
+</div><button id="blank">Khung vẽ trống</button><button id="pan" aria-pressed="false">Kéo bản đồ</button>
 <button id="undo" disabled>Hoàn tác</button>
 <button id="redo" disabled>Làm lại</button>
 <button id="zoomOut" aria-label="Thu nhỏ">−</button>
@@ -56,6 +65,9 @@ button:disabled { opacity: .45; cursor: default; }
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');
 let mapPrompt = '';
+let strokes = [];
+let blank = false;
+let activeStroke = null;
 let objects=[],ground=[],background=null,seed=2027,theme='ninja',level=1;
 
 const viewport = $('viewport');
@@ -84,7 +96,7 @@ function updateZoom(factor) {
   resizeMap(Math.max(Math.min(zoom, .1), Math.min(2, zoom * factor)));
 }
 function snapshot() {
-  return { ...project(), objects: objects.slice(), background };
+  return { ...project(), objects: objects.slice(), strokes: strokes.slice(), background };
 }
 function updateHistory() {
   $('undo').disabled = !undoStack.length;
@@ -99,11 +111,14 @@ function remember() {
 }
 function restore(data) {
   revision++;
+  activeStroke = null;
   seed = data.seed;
   theme = data.theme;
   level = data.level;
   ground = data.ground;
   objects = data.objects;
+  strokes = data.strokes || [];
+  blank = data.blank === true;
   background = data.background || null;
   const sizeChanged = canvas.width !== data.width || canvas.height !== data.height;
   canvas.width = data.width;
@@ -171,35 +186,89 @@ function rng(s){return ()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);
 function rand(r,a,b){return a+r()*(b-a)}
 function status(t){$('status').textContent=t}
 function make(){
-seed=Number($('seed').value)||1;theme=$('theme').value;level=Number($('level').value);const w=Number($('width').value),r=rng(seed);canvas.width=w;canvas.height=720;ground=[];objects=[];background=null;
+activeStroke = null;
+blank = false;
+seed=Number($('seed').value)||1;theme=$('theme').value;level=Number($('level').value);const w=Number($('width').value),r=rng(seed);canvas.width=w;canvas.height=720;ground=[];objects=[];strokes=[];background=null;
 mapPrompt = $('prompt').value;
-const p=mapPrompt.toLowerCase(),density=p.includes('rừng')||p.includes('forest')?1.5:1;
+const p = mapPrompt.normalize('NFC').toLowerCase();
+const density = /rừng|forest/.test(p) ? 1.5 : 1;
+const cherry = /anh đào|cherry blossom/.test(p);
+const waterfall = /thác nước|waterfall/.test(p);
+const houseSpacing = /nhiều nhà|đông nhà/.test(p) ? .75 : /ít nhà|thưa nhà/.test(p) ? 1.5 : 1;
+const enemyMatch = p.match(/(?:^|[^\p{L}\d])(\d{1,6})\s+(?:con\s+)?quái(?!\p{L})/u);
+const enemyCount = /không (?:có )?quái/.test(p) ? 0
+  : enemyMatch ? Math.min(100, Number(enemyMatch[1])) : Math.floor(w / 290);
 for(let x=0;x<=w;x+=40){let y=548+Math.sin(x/260+seed)*28+Math.sin(x/110+seed)*12;ground.push({x,y})}
-for(let x=130;x<w-80;x+=rand(r,145,250)){let y=surface(x);objects.push({type:'house',x,y,w:rand(r,100,180),h:rand(r,100,175),variant:Math.floor(rand(r,0,4))})}
-for(let i=0;i<Math.floor(w/90*density);i++){let x=rand(r,20,w-20);objects.push({type:r()<.75?'tree':'rock',x,y:surface(x),scale:rand(r,.7,1.35),variant:Math.floor(rand(r,0,3))})}
-for(let i=0;i<Math.floor(w/290);i++){let x=rand(r,90,w-90);objects.push({type:'enemy',x,y:surface(x),lv:level+Math.floor(rand(r,0,level===1?5:7))})}
+for(let x=130;x<w-80;x+=rand(r,145,250)*houseSpacing){let y=surface(x);objects.push({type:'house',x,y,w:rand(r,100,180),h:rand(r,100,175),variant:Math.floor(rand(r,0,4))})}
+for(let i=0;i<Math.floor(w/90*density);i++){let x=rand(r,20,w-20);objects.push({type:r()<.75?'tree':'rock',x,y:surface(x),scale:rand(r,.7,1.35),variant:Math.floor(rand(r,0,3)),...(cherry?{cherry:true}:{})})}
+for(let i=0;i<enemyCount;i++){let x=rand(r,90,w-90);objects.push({type:'enemy',x,y:surface(x),lv:level+Math.floor(rand(r,0,level===1?5:7))})}
 objects.push({type:'npc',x:80,y:surface(80),name:theme==='ninja'?'Trưởng làng':'Đạo trưởng'});
+if (waterfall) objects.push({type:'waterfall',x:w*.7,y:surface(w*.7)});
 if(p.includes('cầu'))objects.push({type:'bridge',x:w*.55,y:surface(w*.55)});
-render();status('Đã tạo '+objects.length+' đối tượng · Seed '+seed+' · Có thể chỉnh sửa và xuất Godot 4.')}
+render();
+const applied = [waterfall && 'Thác nước', cherry && 'Anh đào',
+  houseSpacing < 1 && 'Nhiều nhà', houseSpacing > 1 && 'Ít nhà',
+  (enemyMatch || enemyCount === 0) && enemyCount + ' quái'].filter(Boolean);
+status('Đã tạo ' + objects.length + ' đối tượng · Seed ' + seed + (applied.length ? ' · ' + applied.join(', ') : ''));}
 function surface(x){let i=Math.max(0,Math.min(ground.length-2,Math.floor(x/40))),a=ground[i],b=ground[i+1];return a.y+(b.y-a.y)*(x-a.x)/40}
 function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
 function polygon(points,color){ctx.fillStyle=color;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fill()}
 function render(){
 const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);const sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,theme==='ninja'?'#86cbf7':'#b6a3fa');sky.addColorStop(1,'#f6e9c5');ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
-if(background){ctx.drawImage(background,0,0,w,h)}
-else{for(let x=-100;x<w+300;x+=360){polygon([[x,490],[x+170,240],[x+360,490]],theme==='ninja'?'#8fb4b3':'#b3a1c9');polygon([[x+90,350],[x+170,240],[x+245,355]],'#f4f4fa')}}
+if (blank && !background) {
+  ctx.fillStyle = '#f8f8f4';
+  ctx.fillRect(0, 0, w, h);
+} else if (background) {
+  ctx.drawImage(background,0,0,w,h);
+} else {for(let x=-100;x<w+300;x+=360){polygon([[x,490],[x+170,240],[x+360,490]],theme==='ninja'?'#8fb4b3':'#b3a1c9');polygon([[x+90,350],[x+170,240],[x+245,355]],'#f4f4fa')}
+objects.filter(object => object.type === 'waterfall').forEach(drawWaterfall);
 ctx.beginPath();ctx.moveTo(0,ground[0].y);ground.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();ctx.fillStyle=theme==='ninja'?'#7eaf5c':'#8eaa75';ctx.fill();ctx.strokeStyle='#d1e6a2';ctx.lineWidth=12;ctx.beginPath();ground.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
 objects.filter(o=>o.type==='house'||o.type==='bridge').forEach(drawObject);objects.filter(o=>!['house','bridge'].includes(o.type)).forEach(drawObject);
 }
+strokes.forEach(drawStroke);
+}
+function drawStroke(stroke) {
+  const [first, ...rest] = stroke.points;
+  ellipse(first.x, first.y, stroke.size / 2, stroke.size / 2, stroke.color);
+  if (!rest.length) return;
+  ctx.beginPath();
+  ctx.moveTo(first.x, first.y);
+  rest.forEach(point => ctx.lineTo(point.x, point.y));
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.size;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
+}
+function drawSegment(stroke, from, to) {
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.size;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+function drawWaterfall({x,y}) {
+  const top = y - 235;
+  polygon([[x-135,y],[x-78,top+25],[x-42,top],[x+55,top],[x+104,top+75],[x+135,y]], '#627985');
+  polygon([[x-36,top],[x+42,top],[x+62,y],[x-62,y]], '#91def5');
+  polygon([[x-20,top],[x-7,top],[x-21,y],[x-42,y]], '#def9ff');
+  polygon([[x+15,top],[x+25,top],[x+43,y],[x+25,y]], '#bcecff');
+  ellipse(x,y-7,74,13,'#def9ff');
+}
 function drawObject(o){let x=o.x,y=o.y;
 if(o.type==='house'){let w=o.w||120,h=o.h||130,v=o.variant||0;ctx.fillStyle=['#d5aa78','#b78d6b','#d5c6a0','#a6bdad'][v%4];ctx.fillRect(x-w/2,y-h,w,h);ctx.strokeStyle='#604c46';ctx.lineWidth=7;ctx.strokeRect(x-w/2,y-h,w,h);polygon([[x-w*.65,y-h],[x,y-h-55],[x+w*.65,y-h]],theme==='ninja'?'#344c6b':'#6b548f');ctx.fillStyle='#483b36';ctx.fillRect(x-17,y-55,34,55);ctx.fillStyle='#d5e5e7';ctx.fillRect(x-w*.35,y-h+20,27,27);ctx.fillRect(x+w*.15,y-h+20,27,27)}
-if(o.type==='tree'){let s=o.scale||1;ctx.fillStyle='#755440';ctx.fillRect(x-9*s,y-88*s,18*s,88*s);ellipse(x,y-110*s,42*s,43*s,theme==='ninja'?(o.variant%2?'#ed9fc2':'#6cba7d'):'#91d5b7');ellipse(x-20*s,y-130*s,25*s,27*s,theme==='ninja'?'#f6bdd5':'#b0e5cd')}
+if(o.type==='tree'){let s=o.scale||1;ctx.fillStyle='#755440';ctx.fillRect(x-9*s,y-88*s,18*s,88*s);ellipse(x,y-110*s,42*s,43*s,o.cherry?'#ed9fc2':theme==='ninja'?(o.variant%2?'#ed9fc2':'#6cba7d'):'#91d5b7');ellipse(x-20*s,y-130*s,25*s,27*s,o.cherry||theme==='ninja'?'#f6bdd5':'#b0e5cd')}
 if(o.type==='rock'){ellipse(x,y-12,24*(o.scale||1),15*(o.scale||1),'#778c91')}
 if(o.type==='enemy'||o.type==='npc'){ellipse(x,y-28,17,23,o.type==='npc'?'#5a77d9':'#b85762');ellipse(x,y-57,14,15,'#f2c39d');ctx.fillStyle='#172237';ctx.fillRect(x-13,y-72,26,8);ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillText(o.type==='npc'?(o.name||'NPC'):'Lv '+(o.lv||1),x,y-85)}
 if(o.type==='bridge'){ctx.fillStyle='#875e44';ctx.fillRect(x-90,y-12,180,14);for(let i=-80;i<=80;i+=25)ctx.fillRect(x+i,y-36,6,25)}
 }
 function download(name,blob){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)}
-function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects}}
+function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects,strokes,blank}}
 $('generate').onclick = () => { remember(); make(); fitMap(); };
 $('random').onclick = () => {
   remember();
@@ -223,9 +292,13 @@ $('file').onchange = async event => {
       && data.ground.at(-1).x >= data.width - 39;
     const validObjects = Array.isArray(data.objects) && data.objects.every(object =>
       Number.isFinite(object?.x) && Number.isFinite(object.y)
-      && ['house', 'tree', 'rock', 'enemy', 'npc', 'bridge'].includes(object.type)
+      && ['house', 'tree', 'rock', 'enemy', 'npc', 'bridge', 'waterfall'].includes(object.type)
       && (object.scale === undefined || (Number.isFinite(object.scale) && object.scale > 0)));
-    if (data.format !== 'thien-dao-ai-map-v3' || !validSize || !validGround || !validObjects) {
+    const validStrokes = data.strokes === undefined || (Array.isArray(data.strokes) && data.strokes.every(stroke =>
+      /^#[0-9a-f]{6}$/i.test(stroke?.color) && Number.isFinite(stroke.size) && stroke.size >= 1 && stroke.size <= 128
+      && Array.isArray(stroke.points) && stroke.points.length > 0
+      && stroke.points.every(point => Number.isFinite(point?.x) && Number.isFinite(point.y))));
+    if (data.format !== 'thien-dao-ai-map-v3' || !validSize || !validGround || !validObjects || !validStrokes) {
       throw new Error('Định dạng dự án không hợp lệ');
     }
     remember();
@@ -238,17 +311,60 @@ $('file').onchange = async event => {
     event.target.value = '';
   }
 };
+$('tool').onchange = () => { $('brushControls').hidden = $('tool').value !== 'brush'; };
+function selectBrush() {
+  $('tool').value = 'brush';
+  $('tool').onchange();
+}
+$('blank').onclick = () => {
+  remember();
+  activeStroke = null;
+  blank = true;
+  background = null;
+  strokes = [];
+  selectBrush();
+  render();
+  status('Khung vẽ trống đã sẵn sàng.');
+};
+function mapPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * canvas.width / rect.width,
+    y: (event.clientY - rect.top) * canvas.height / rect.height
+  };
+}
+canvas.addEventListener('pointermove', event => {
+  if (activeStroke?.id !== event.pointerId) return;
+  const { stroke } = activeStroke;
+  const point = mapPoint(event);
+  drawSegment(stroke, stroke.points.at(-1), point);
+  stroke.points.push(point);
+});
+canvas.addEventListener('lostpointercapture', event => {
+  if (activeStroke?.id === event.pointerId) activeStroke = null;
+});
 canvas.addEventListener('pointerdown', event => {
   if (event.button !== 0 || !event.isPrimary || viewport.classList.contains('pan')) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left) * canvas.width / rect.width;
-  const y = (event.clientY - rect.top) * canvas.height / rect.height;
+  const { x, y } = mapPoint(event);
   const type = $('tool').value;
+  if ((background || blank) && type !== 'brush') { status('Chọn Cọ vẽ tay để chỉnh trực tiếp trên bản đồ AI.'); return; }
+  if (type === 'brush') {
+    remember();
+    const size = Math.max(1, Math.min(128, Number($('brushSize').value) || 12));
+    const stroke = { color: $('brushColor').value, size, points: [{ x, y }] };
+    strokes.push(stroke);
+    activeStroke = { id: event.pointerId, stroke };
+    canvas.setPointerCapture(event.pointerId);
+    drawStroke(stroke);
+    status('Đang dùng cọ vẽ tay.');
+    return;
+  }
   if (type === 'erase') {
     let nearest = -1;
     let distance = 75;
     objects.forEach((object, index) => {
-      const candidate = Math.hypot(object.x - x, object.y - y);
+      const hitY = object.type === 'waterfall' ? Math.max(object.y - 235, Math.min(object.y, y)) : object.y;
+      const candidate = Math.hypot(object.x - x, hitY - y);
       if (candidate < distance) {
         distance = candidate;
         nearest = index;
@@ -270,7 +386,7 @@ canvas.addEventListener('pointerdown', event => {
   }
   render();
 });
-$('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;render();status('Đã thêm ảnh HD làm lớp nền. Lưu ý: dự án JSON chưa nhúng ảnh nền; hãy xuất PNG để giữ hình ảnh.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
+$('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Vẽ hoàn chỉnh một bản đồ game 2.5D đi cảnh chiều ngang. Lấp đầy toàn bộ khung hình bằng phong cảnh, địa hình chơi được và các chi tiết trong mô tả. Không chèn chữ, giao diện hoặc khung viền. Mô tả: '+$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;selectBrush();render();status('AI đã vẽ toàn bộ bản đồ. Có thể vẽ thêm bằng cọ và xuất PNG để giữ ảnh AI.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
 make();
 fitMap();
 </script></body></html>
