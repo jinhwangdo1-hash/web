@@ -40,6 +40,15 @@ button:disabled { opacity: .45; cursor: default; }
 .animation-panel .row { margin-bottom: 10px; }
 .animation-panel output { display: block; margin-block: 8px; font-size: .85rem; }
 .animation-panel canvas { width: 100%; height: auto; max-height: none; display: block; border-radius: 8px; cursor: default; touch-action: auto; box-shadow: none; }
+
+#playtest { width: min(960px, 96vw); max-height: 96dvh; padding: 14px; border: 1px solid #425579; border-radius: 12px; background: #141e34; color: #edf3ff; }
+#playtest::backdrop { background: #040816df; }
+#playtest .bar { justify-content: space-between; padding: 8px 0; gap: 6px; }
+#playtest canvas { display: block; width: 100%; height: auto; max-height: none; border-radius: 8px; cursor: default; }
+.play-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.play-controls button { min-height: 44px; padding: 6px; touch-action: none; }
+#playHud { display: block; margin-block: 8px; }
+@media(max-width: 470px) { #playtest { padding: 8px; } .play-controls button { font-size: .82rem; } }
 </style></head><body>
 <header><div><strong>✦ THIÊN ĐẠO · AI MAP STUDIO V3</strong><br><small>AI bố trí map miễn phí · Ninja & Tu tiên · Xuất Godot 4</small></div><div><a href="map-hd.html">Map Studio V2</a> · <a href="index.html">Trang chủ</a></div></header>
 <div class="app"><aside>
@@ -72,7 +81,7 @@ button:disabled { opacity: .45; cursor: default; }
 <output id="animationStatus" aria-live="polite"></output>
 <canvas id="animationPreview" width="320" height="160" aria-label="Xem trước chuyển động"></canvas>
 </details>
-</aside><main class="stage"><div class="bar"><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
+</aside><main class="stage"><div class="bar"><button id="testMap" class="primary">Chơi thử</button><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
 <div><label for="tool">Công cụ</label><select id="tool"><option value="brush">Cọ vẽ tay</option><option value="house" selected>Đặt nhà / công trình</option><option value="tree">Đặt cây</option><option value="rock">Đặt đá</option><option value="enemy">Đặt quái</option><option value="npc">Đặt NPC</option><option value="erase">Xóa đối tượng</option></select></div>
 <div id="brushControls" class="brush-controls" hidden>
 <label for="brushColor">Màu</label><input id="brushColor" type="color" value="#fbce82">
@@ -85,6 +94,15 @@ button:disabled { opacity: .45; cursor: default; }
 <button id="zoomIn" aria-label="Phóng to">+</button>
 <button id="fit">Vừa khung</button>
 </div><div class="viewport" id="viewport" tabindex="0" aria-label="Khung bản đồ"><canvas id="canvas" width="2400" height="720"></canvas></div><div id="status" role="status">Sẵn sàng. Nhấn “AI bố trí map” để bắt đầu.</div></main></div>
+<dialog id="playtest" aria-labelledby="playTitle">
+<div class="bar"><strong id="playTitle">Chơi thử bản đồ</strong><button id="restartTest">Chơi lại</button><button id="closeTest">Về trình chỉnh sửa</button></div>
+<canvas id="playCanvas" tabindex="0" width="900" height="420" aria-label="Màn chơi thử bản đồ"></canvas>
+<output id="playHud" aria-live="polite"></output>
+<div class="play-controls" aria-label="Điều khiển chơi thử">
+<button data-play="left">Trái · A</button><button data-play="right">Phải · D</button>
+<button data-play="jump">Nhảy · Space</button><button data-play="attack">Đánh · J</button>
+<button data-play="skill">Kỹ năng · K</button></div>
+</dialog>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');
@@ -239,7 +257,7 @@ status('Đã tạo ' + objects.length + ' đối tượng · Seed ' + seed + (ap
 function surface(x){let i=Math.max(0,Math.min(ground.length-2,Math.floor(x/40))),a=ground[i],b=ground[i+1];return a.y+(b.y-a.y)*(x-a.x)/40}
 function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
 function polygon(points,color){ctx.fillStyle=color;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fill()}
-function render(){
+function render(showActors = true){
 const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);const sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,theme==='ninja'?'#86cbf7':'#b6a3fa');sky.addColorStop(1,'#f6e9c5');ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
 if (blank && !background) {
   ctx.fillStyle = '#f8f8f4';
@@ -249,7 +267,7 @@ if (blank && !background) {
 } else {for(let x=-100;x<w+300;x+=360){polygon([[x,490],[x+170,240],[x+360,490]],theme==='ninja'?'#8fb4b3':'#b3a1c9');polygon([[x+90,350],[x+170,240],[x+245,355]],'#f4f4fa')}
 objects.filter(object => object.type === 'waterfall').forEach(drawWaterfall);
 ctx.beginPath();ctx.moveTo(0,ground[0].y);ground.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();ctx.fillStyle=theme==='ninja'?'#7eaf5c':'#8eaa75';ctx.fill();ctx.strokeStyle='#d1e6a2';ctx.lineWidth=12;ctx.beginPath();ground.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
-objects.filter(o=>o.type==='house'||o.type==='bridge').forEach(drawObject);objects.filter(o=>!['house','bridge'].includes(o.type)).forEach(drawObject);
+objects.filter(o=>o.type==='house'||o.type==='bridge').forEach(drawObject);objects.filter(o=>!['house','bridge'].includes(o.type) && (showActors || !['npc','enemy'].includes(o.type))).forEach(drawObject);
 }
 strokes.forEach(drawStroke);
 refreshActors();
@@ -634,6 +652,243 @@ $('animationPanel').ontoggle = () => {
   if ($('animationPanel').open) syncAnimationEditor();
   else stopPreview();
 };
+
+
+const playDialog = $('playtest');
+const playCanvas = $('playCanvas');
+const playCtx = playCanvas.getContext('2d');
+const keys = new Set();
+const pointers = new Map();
+const testKeys = {
+  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+  ArrowUp: 'jump', KeyW: 'jump', Space: 'jump', KeyJ: 'attack', KeyK: 'skill'
+};
+let match = null;
+let gameFrame = null;
+
+function makeFighter(actor, fallbackX, hp) {
+  const x = Math.max(0, Math.min(canvas.width, actor?.x ?? fallbackX));
+  return { actor, x, y: surface(x), vy: 0, facing: 1, hp, maxHp: hp, action: 'idle', actionSince: 0, damageAt: null, skillUntil: 0, hurtUntil: 0 };
+}
+function startMatch() {
+  if (gameFrame !== null) cancelAnimationFrame(gameFrame);
+  keys.clear();
+  pointers.clear();
+  const chosen = selectedActor();
+  const hero = chosen?.type === 'npc' ? chosen : objects.find(object => object.type === 'npc');
+  const terrain = document.createElement('canvas');
+  terrain.width = canvas.width;
+  terrain.height = canvas.height;
+  render(false);
+  terrain.getContext('2d').drawImage(canvas, 0, 0);
+  render();
+
+  const player = makeFighter(hero, 80, 100);
+  const enemies = objects.filter(object => object.type === 'enemy').map(actor => makeFighter(actor, actor.x, 55));
+  match = { terrain, player, enemies, now: 0, lastFrame: null, result: '' };
+  paintMatch();
+  playCanvas.focus();
+  gameFrame = requestAnimationFrame(tickMatch);
+}
+
+function held(action) {
+  return keys.has(action) || Array.from(pointers.values()).includes(action);
+}
+function swing(fighter, action) {
+  fighter.action = action;
+  fighter.actionSince = match.now;
+  fighter.damageAt = match.now + (action === 'skill' ? .24 : .14);
+}
+function processAction(action) {
+  if (!match || match.result) return;
+  const player = match.player;
+  if (action === 'jump' && player.y >= surface(player.x) - 2 && player.vy === 0) player.vy = -590;
+  if (!['attack', 'skill'].includes(action) || player.damageAt !== null || match.now < player.actionSince + .15 && ['attack','skill'].includes(player.action)) return;
+  if (action === 'skill') {
+    if (match.now < player.skillUntil) return;
+    player.skillUntil = match.now + 2.5;
+  }
+  swing(player, action);
+}
+function hurt(target, amount) {
+  target.hp = Math.max(0, target.hp - amount);
+  target.hurtUntil = match.now + .23;
+  target.damageAt = null;
+}
+function updateMatch(dt) {
+  const {player, enemies, now} = match;
+  const direction = Number(held('right')) - Number(held('left'));
+  const oldSurface = surface(player.x);
+  const grounded = player.y >= oldSurface - 2 && player.vy === 0;
+  if (direction && player.damageAt === null) {
+    player.facing = direction;
+    player.x = Math.max(0, Math.min(canvas.width, player.x + direction * 245 * dt));
+  }
+  const floor = surface(player.x);
+  if (grounded) player.y = floor;
+  else {
+    player.vy += 1580 * dt;
+    player.y += player.vy * dt;
+    if (player.y >= floor && player.vy >= 0) { player.y = floor; player.vy = 0; }
+  }
+  if (player.damageAt !== null && now >= player.damageAt) {
+    const skill = player.action === 'skill';
+    for (const enemy of enemies) {
+      const delta = enemy.x - player.x;
+      if (enemy.hp && Math.abs(enemy.y - player.y) < 85 && delta * player.facing >= -10 && Math.abs(delta) <= (skill ? 220 : 75)) {
+        hurt(enemy, skill ? 39 : 22);
+      }
+    }
+    player.damageAt = null;
+  }
+  if (!['skill', 'attack'].includes(player.action) || now - player.actionSince > (player.action === 'skill' ? .62 : .38)) {
+    if (now < player.hurtUntil) player.action = 'hit';
+    else player.action = direction || player.vy ? 'move' : 'idle';
+  }
+
+  for (const enemy of enemies) {
+    if (!enemy.hp) continue;
+    const distance = player.x - enemy.x;
+    if (enemy.damageAt !== null) {
+      if (now >= enemy.damageAt) {
+        if (Math.abs(distance) < 60 && Math.abs(player.y - enemy.y) < 60) hurt(player, 12);
+        enemy.damageAt = null;
+      }
+      continue;
+    }
+    if (now < enemy.hurtUntil) {
+      enemy.action = 'hit';
+    } else if (Math.abs(distance) < 52 && Math.abs(player.y - enemy.y) < 60 && now - enemy.actionSince > .85) {
+      enemy.facing = Math.sign(distance) || enemy.facing;
+      swing(enemy, 'attack');
+    } else if (Math.abs(distance) >= 46 && Math.abs(distance) < 345) {
+      enemy.facing = Math.sign(distance);
+      enemy.x += enemy.facing * 105 * dt;
+      enemy.y = surface(enemy.x);
+      enemy.action = 'move';
+    } else if (now - enemy.actionSince > .35) enemy.action = 'idle';
+  }
+  if (!player.hp) match.result = 'Bạn đã gục. Bấm Chơi lại để thử lại.';
+  else if (enemies.length && enemies.every(enemy => !enemy.hp)) match.result = 'Đã hạ hết quái. Bấm Chơi lại để thử lại.';
+}
+
+function paintFighter(fighter, isPlayer) {
+  const {x, y, facing, actor} = fighter;
+  const seconds = match.now - fighter.actionSince;
+  const actualAction = match.now < fighter.hurtUntil ? 'hit' : fighter.action;
+  const clip = actor?.animations?.[actualAction];
+  const spriteClip = clip?.source ? clip : actor?.animations?.idle;
+  const sprite = loadedSprite(spriteClip?.source);
+  playCtx.save();
+  playCtx.translate(x, y);
+  playCtx.scale(facing, 1);
+  if (sprite) paintSprite(playCtx, sprite, spriteClip, seconds, 0, 0, 96);
+  else {
+    const bob = actualAction === 'move' ? Math.abs(Math.sin(match.now * 16)) * 7 : 0;
+    const reach = actualAction === 'attack' ? 14 : 0;
+    playCtx.fillStyle = isPlayer ? '#526de1' : '#bd506a';
+    playCtx.fillRect(-17 + reach, -50 - bob, 34, 49);
+    playCtx.fillStyle = '#ffdab3';
+    playCtx.beginPath();
+    playCtx.arc(reach, -61 - bob, 13, 0, Math.PI * 2);
+    playCtx.fill();
+  }
+  if (isPlayer && fighter.action === 'skill' && seconds < .62) {
+    const effect = clip?.effect || 'wave';
+    playCtx.strokeStyle = effect === 'fire' ? '#ff8d43' : '#aaf4ff';
+    playCtx.fillStyle = playCtx.strokeStyle;
+    playCtx.lineWidth = 5;
+    playCtx.beginPath();
+    if (effect === 'slash') {
+      playCtx.arc(30, -42, 18 + 95 * seconds, -1.1, 1.1);
+      playCtx.stroke();
+    } else {
+      playCtx.arc(28 + 250 * seconds, -45, effect === 'fire' ? 19 : 20 + seconds * 20, 0, Math.PI * 2);
+      if (effect === 'fire') playCtx.fill();
+      else playCtx.stroke();
+    }
+  }
+  playCtx.restore();
+  playCtx.fillStyle = '#161d2c';
+  playCtx.fillRect(x - 28, y - 105, 56, 6);
+  playCtx.fillStyle = isPlayer ? '#63e5a2' : '#fb758c';
+  playCtx.fillRect(x - 28, y - 105, 56 * fighter.hp / fighter.maxHp, 6);
+}
+
+function paintMatch() {
+  const {player, enemies, terrain, now, result} = match;
+  const viewHeight = Math.min(terrain.height, 490);
+  const scale = playCanvas.height / viewHeight;
+  const viewWidth = playCanvas.width / scale;
+  const cameraX = Math.max(0, Math.min(terrain.width - viewWidth, player.x - viewWidth * .37));
+  const cameraY = Math.max(0, Math.min(terrain.height - viewHeight, player.y - viewHeight * .73));
+  playCtx.fillStyle = '#101829';
+  playCtx.fillRect(0, 0, playCanvas.width, playCanvas.height);
+  playCtx.save();
+  playCtx.scale(scale, scale);
+  playCtx.translate(-cameraX, -cameraY);
+  playCtx.drawImage(terrain, 0, 0);
+  if (blank || background) {
+    playCtx.beginPath();
+    ground.forEach((point, index) => index === 0 ? playCtx.moveTo(point.x, point.y) : playCtx.lineTo(point.x, point.y));
+    playCtx.strokeStyle = '#354a75';
+    playCtx.lineWidth = 3;
+    playCtx.stroke();
+  }
+  enemies.filter(enemy => enemy.hp).forEach(enemy => paintFighter(enemy, false));
+  if (player.hp) paintFighter(player, true);
+  playCtx.restore();
+  const alive = enemies.filter(enemy => enemy.hp).length;
+  const cooldown = Math.max(0, player.skillUntil - now);
+  const label = result || 'Máu ' + player.hp + '/100 · Quái còn ' + alive + ' · Kỹ năng ' + (cooldown > 0 ? 'hồi ' + Math.ceil(cooldown) + ' giây' : 'sẵn sàng');
+  if ($('playHud').value !== label) $('playHud').value = label;
+}
+function tickMatch(timestamp) {
+  if (!match) return;
+  const dt = match.lastFrame === null ? 0 : Math.min(.04, (timestamp - match.lastFrame) / 1000);
+  match.lastFrame = timestamp;
+  match.now += dt;
+  updateMatch(dt);
+  paintMatch();
+  gameFrame = match.result ? null : requestAnimationFrame(tickMatch);
+}
+$('testMap').onclick = () => {
+  stopPreview();
+  playDialog.showModal();
+  startMatch();
+};
+$('restartTest').onclick = startMatch;
+$('closeTest').onclick = () => playDialog.close();
+playDialog.addEventListener('close', () => {
+  if (gameFrame !== null) cancelAnimationFrame(gameFrame);
+  gameFrame = null;
+  match = null;
+  keys.clear();
+  pointers.clear();
+});
+window.addEventListener('blur', () => { keys.clear(); pointers.clear(); });
+document.addEventListener('keydown', event => {
+  if (!playDialog.open || !testKeys[event.code] || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.code === 'Space' && event.target.closest('#restartTest, #closeTest')) return;
+  event.preventDefault();
+  const action = testKeys[event.code];
+  keys.add(action);
+  if (!event.repeat) processAction(action);
+});
+document.addEventListener('keyup', event => { if (testKeys[event.code]) keys.delete(testKeys[event.code]); });
+for (const button of playDialog.querySelectorAll('[data-play]')) {
+  button.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId, button.dataset.play);
+    processAction(button.dataset.play);
+  });
+  button.addEventListener('lostpointercapture', event => pointers.delete(event.pointerId));
+  button.addEventListener('click', event => {
+    if (event.detail === 0) processAction(button.dataset.play);
+  });
+}
 
 make();
 fitMap();
