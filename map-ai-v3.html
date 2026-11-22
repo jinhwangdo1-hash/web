@@ -54,6 +54,10 @@ button:disabled { opacity: .45; cursor: default; }
 <div class="app"><aside>
 <h2>AI tạo bản đồ</h2><span class="chip">Tự động miễn phí</span>
 <label for="theme">Thế giới</label><select id="theme"><option value="ninja">Ninja Nhật Bản Chibi HD</option><option value="tutien">Tiên Lộ Lục Tông 2.5D</option></select>
+<label for="visualStyle">Tạo hình</label>
+<select id="visualStyle"><option value="daylight">2.5D chi tiết · Ban ngày</option>
+<option value="sunset">2.5D chi tiết · Hoàng hôn</option>
+<option value="classic">Chibi cổ điển</option></select>
 <label for="prompt">Mô tả bản đồ</label><textarea id="prompt">Làng ninja nhiều nhà gỗ khác nhau, cây anh đào, cầu, thác nước, quái cấp 1 đến 5</textarea>
 <div class="row"><div><label for="level">Cấp quái</label><select id="level"><option value="1">Lv 1–5</option><option value="6">Lv 6–12</option><option value="13">Lv 13–20</option><option value="21">Lv 21–30</option></select></div><div><label for="width">Chiều dài</label><select id="width"><option value="1600">Ngắn</option><option value="2400" selected>Trung bình</option><option value="3600">Dài</option><option value="4800">Rất dài</option></select></div></div>
 <label for="seed">Seed (để tạo lại cùng map)</label><input id="seed" type="number" value="2027">
@@ -107,6 +111,7 @@ button:disabled { opacity: .45; cursor: default; }
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');
 let mapPrompt = '';
+let visualStyle = 'daylight';
 let strokes = [];
 let blank = false;
 let activeStroke = null;
@@ -161,6 +166,8 @@ function restore(data) {
   objects = data.objects;
   strokes = data.strokes || [];
   blank = data.blank === true;
+  visualStyle = ['daylight', 'sunset'].includes(data.visualStyle) ? data.visualStyle : 'classic';
+  $('visualStyle').value = visualStyle;
   background = data.background || null;
   const sizeChanged = canvas.width !== data.width || canvas.height !== data.height;
   canvas.width = data.width;
@@ -228,6 +235,12 @@ viewport.addEventListener('lostpointercapture', event => {
 function rng(s){return ()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296}}
 function rand(r,a,b){return a+r()*(b-a)}
 function status(t){$('status').textContent=t}
+$('visualStyle').onchange = () => {
+  remember();
+  visualStyle = $('visualStyle').value;
+  render();
+  status(background || blank ? 'Tạo hình đã lưu cho lần bố trí map tiếp theo.' : 'Đã cập nhật tạo hình bản đồ.');
+};
 function make(){
 activeStroke = null;
 blank = false;
@@ -241,7 +254,7 @@ const houseSpacing = /nhiều nhà|đông nhà/.test(p) ? .75 : /ít nhà|thưa 
 const enemyMatch = p.match(/(?:^|[^\p{L}\d])(\d{1,6})\s+(?:con\s+)?quái(?!\p{L})/u);
 const enemyCount = /không (?:có )?quái/.test(p) ? 0
   : enemyMatch ? Math.min(100, Number(enemyMatch[1])) : Math.floor(w / 290);
-for(let x=0;x<=w;x+=40){let y=548+Math.sin(x/260+seed)*28+Math.sin(x/110+seed)*12;ground.push({x,y})}
+for(let x=0;x<w+40;x+=40){let y=548+Math.sin(x/260+seed)*28+Math.sin(x/110+seed)*12;ground.push({x,y})}
 for(let x=130;x<w-80;x+=rand(r,145,250)*houseSpacing){let y=surface(x);objects.push({type:'house',x,y,w:rand(r,100,180),h:rand(r,100,175),variant:Math.floor(rand(r,0,4))})}
 for(let i=0;i<Math.floor(w/90*density);i++){let x=rand(r,20,w-20);objects.push({type:r()<.75?'tree':'rock',x,y:surface(x),scale:rand(r,.7,1.35),variant:Math.floor(rand(r,0,3)),...(cherry?{cherry:true}:{})})}
 for(let i=0;i<enemyCount;i++){let x=rand(r,90,w-90);objects.push({type:'enemy',x,y:surface(x),lv:level+Math.floor(rand(r,0,level===1?5:7))})}
@@ -264,6 +277,8 @@ if (blank && !background) {
   ctx.fillRect(0, 0, w, h);
 } else if (background) {
   ctx.drawImage(background,0,0,w,h);
+} else if (visualStyle !== 'classic') {
+  paintLandscape(showActors);
 } else {for(let x=-100;x<w+300;x+=360){polygon([[x,490],[x+170,240],[x+360,490]],theme==='ninja'?'#8fb4b3':'#b3a1c9');polygon([[x+90,350],[x+170,240],[x+245,355]],'#f4f4fa')}
 objects.filter(object => object.type === 'waterfall').forEach(drawWaterfall);
 ctx.beginPath();ctx.moveTo(0,ground[0].y);ground.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();ctx.fillStyle=theme==='ninja'?'#7eaf5c':'#8eaa75';ctx.fill();ctx.strokeStyle='#d1e6a2';ctx.lineWidth=12;ctx.beginPath();ground.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
@@ -271,6 +286,171 @@ objects.filter(o=>o.type==='house'||o.type==='bridge').forEach(drawObject);objec
 }
 strokes.forEach(drawStroke);
 refreshActors();
+}
+
+function colorRamp(x1, y1, x2, y2, stops) {
+  const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+  stops.forEach(([at, color]) => gradient.addColorStop(at, color));
+  return gradient;
+}
+function terrainLine() {
+  ctx.beginPath();
+  ctx.moveTo(0, ground[0].y);
+  ground.forEach(point => ctx.lineTo(point.x, point.y));
+  ctx.lineTo(canvas.width, surface(canvas.width));
+}
+function paintLandscape(showActors) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const dusk = visualStyle === 'sunset';
+  const r = rng(seed ^ 0x63a9f71c);
+  const sunX = w * .28;
+  const sunY = h * (dusk ? .34 : .22);
+  ctx.fillStyle = colorRamp(0,0,0,h, dusk
+    ? [[0,'#252d58'],[.41,'#bd6a72'],[.67,'#ffc58e'],[1,'#f7d6a0']]
+    : [[0,'#2f6a9b'],[.48,'#9dcdde'],[.76,'#f0dbc0'],[1,'#eae8d5']]);
+  ctx.fillRect(0,0,w,h);
+  const halo = ctx.createRadialGradient(sunX,sunY,12,sunX,sunY,h*.31);
+  halo.addColorStop(0,dusk ? '#ffe2aa' : '#fff7cd');
+  halo.addColorStop(1,'#fff3c000');
+  ctx.fillStyle = halo;
+  ctx.fillRect(sunX-h*.31,sunY-h*.31,h*.62,h*.62);
+  ellipse(sunX,sunY,h*.045,h*.045,dusk?'#ffe7b4':'#fff7df');
+
+  for (let x = 0; x < w; x += 130) {
+    const y = rand(r,h*.12,h*.44);
+    const length = rand(r,45,155);
+    ellipse(x,y,length,rand(r,4,12),dusk?'#ffc29a37':'#fff5e154');
+    ellipse(x+length*.28,y+4,length*.8,5,dusk?'#ffdcc035':'#fff5e143');
+  }
+
+  const ridges = dusk ? ['#a77b8b','#725f79','#41465e'] : ['#9bb7c7','#658fa0','#3b6870'];
+  ridges.forEach((color, layer) => {
+    const base = h * (.49 + layer*.085);
+    const points = [[0,h]];
+    for (let x = 0; x <= w + 36; x += 36) {
+      const ridge = Math.sin(x/(182-layer*31)+seed+layer*3)*h*.08
+        + Math.cos(x/(52-layer*3)+layer)*h*.033;
+      points.push([x,base+ridge-rand(r,0,h*.043)]);
+    }
+    points.push([w+36,h]);
+    polygon(points,color);
+  });
+
+  for (let x = 10; x < w; x += rand(r,18,39)) {
+    const y = h*.78 + Math.sin(x/160)*h*.037;
+    const height = rand(r,h*.034,h*.105);
+    const color = dusk ? '#303c4b' : '#305d60';
+    polygon([[x-height*.22,y],[x,y-height],[x+height*.21,y]],color);
+    polygon([[x-height*.26,y-8],[x,y-height*.78],[x+height*.27,y-8]],color);
+  }
+  ctx.fillStyle = colorRamp(0,h*.47,0,h*.85,[[0,'#f3ebcf00'],[.65,dusk?'#ffd3a456':'#d5eeeb77'],[1,'#eae5d500']]);
+  ctx.fillRect(0,h*.47,w,h*.38);
+  objects.filter(object => object.type === 'waterfall').forEach(object => paintDetailedWaterfall(object, dusk));
+
+  ctx.save();
+  terrainLine();
+  ctx.lineTo(w,h);
+  ctx.lineTo(0,h);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = colorRamp(0,h*.69,0,h, dusk
+    ? [[0,'#929260'],[.32,'#615439'],[1,'#2b262b']]
+    : [[0,'#91a558'],[.29,'#776442'],[1,'#3b3731']]);
+  ctx.fillRect(0,0,w,h);
+  for (let x = 0; x < w; x += 9) {
+    const y = surface(x);
+    for (let i = 0; i < 3; i++) {
+      const depth = rand(r,12,Math.max(13,h-y));
+      ellipse(x+rand(r,-5,6),y+depth,rand(r,2,10),rand(r,1,3),i%2?'#1a23202b':'#ffdca52b');
+    }
+  }
+  ctx.restore();
+  terrainLine();
+  ctx.strokeStyle = dusk ? '#a89e67' : '#aabb72';
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  for (let x = 4; x < w; x += rand(r,7,17)) {
+    const y = surface(x);
+    polygon([[x-4,y+2],[x-rand(r,0,7),y-rand(r,4,14)],[x+3,y-4],[x+rand(r,4,10),y-rand(r,4,11)],[x+5,y+2]], dusk?'#8e915c':'#69844e');
+  }
+
+  const scenery = objects.filter(object => ['house','bridge','tree','rock'].includes(object.type));
+  const ordered = scenery.slice().sort((a,b) => a.y-b.y);
+  for (const object of ordered) {
+    const size = object.type === 'house' ? (object.w || 120) * .65 : object.type === 'bridge' ? 94 : 42 * (object.scale || 1);
+    ellipse(object.x+size*.24,object.y+3,size,Math.max(5,size*.125),dusk?'#271e2b66':'#23332658');
+  }
+  for (const object of ordered) paintDetailedObject(object,dusk);
+  if (showActors) objects.filter(object => ['npc','enemy'].includes(object.type)).forEach(drawObject);
+}
+function paintDetailedWaterfall({x,y}, dusk) {
+  const top = y - 235;
+  polygon([[x-159,y],[x-111,y-106],[x-75,top+23],[x+42,top-7],[x+101,y-103],[x+151,y]],dusk?'#454759':'#586d72');
+  polygon([[x-159,y],[x-111,y-106],[x-75,top+23],[x-41,top+6],[x-60,y]],'#9a9d8a');
+  polygon([[x+20,top],[x+49,top+6],[x+108,y-54],[x+150,y],[x+57,y]],'#333d48');
+  polygon([[x-39,top+5],[x+25,top],[x+57,y],[x-60,y]],colorRamp(x-60,top,x+57,y,[[0,'#ddf1ea'],[.42,'#76b7c0'],[1,'#e4f6f0']]));
+  for (let i = 0; i < 7; i++) {
+    const offset = i*10-32;
+    polygon([[x+offset,top+12],[x+offset+3,top+10],[x+offset*1.6+5,y],[x+offset*1.6,y]], i%2?'#f1fffa66':'#e3fcf880');
+    ellipse(x+offset*2,y-7-(i%3)*5,23,6,'#edfefa99');
+  }
+}
+function paintDetailedObject(object,dusk) {
+  const {x,y} = object;
+  const scale = object.scale || 1;
+  if (object.type === 'bridge') {
+    drawObject(object);
+    return;
+  }
+  if (object.type === 'rock') {
+    const r = 28*scale;
+    polygon([[x-r,y],[x-r*.8,y-r*.53],[x-r*.15,y-r*.91],[x+r*.67,y-r*.73],[x+r,y-3]],'#565f64');
+    polygon([[x-r*.8,y-r*.53],[x-r*.15,y-r*.91],[x+r*.67,y-r*.73],[x+r*.25,y-r*.31]],'#87918c');
+    return;
+  }
+  if (object.type === 'tree') {
+    const r = rng(seed ^ Math.round(x*100));
+    const h = 135*scale;
+    polygon([[x-10*scale,y],[x-4*scale,y-h*.72],[x-24*scale,y-h*.91],[x-8*scale,y-h*.84],[x+10*scale,y-h],[x+6*scale,y-h*.55],[x+13*scale,y]],'#574033');
+    const blossoms = object.cherry ? ['#ad535d','#ca7786','#e7a3a5','#f4c8b6'] : ['#38534a','#47705a','#629071','#89a678'];
+    for (let i=0; i<18; i++) {
+      const dx = rand(r,-45,45)*scale;
+      const dy = rand(r,-36,19)*scale;
+      const size = rand(r,11,23)*scale;
+      ellipse(x+dx,y-h+dy,size,size*.73,blossoms[i%blossoms.length]);
+    }
+    return;
+  }
+
+  const w = object.w || 120;
+  const h = object.h || 130;
+  const side = w*.21;
+  const roof = theme === 'ninja' ? '#293d53' : '#4b425f';
+  ctx.fillStyle = colorRamp(x-w/2,y-h,x+w/2,y,[[0,'#c09469'],[1,'#745043']]);
+  ctx.fillRect(x-w/2,y-h,w,h);
+  polygon([[x+w/2,y-h],[x+w/2+side,y-h-13],[x+w/2+side,y-15],[x+w/2,y]],'#4f3938');
+  for (let i=1;i<7;i++) {
+    ctx.fillStyle = i%2 ? '#49322770' : '#ebbd8a55';
+    ctx.fillRect(x-w/2,y-h+i*h/7,w,2);
+  }
+  polygon([[x-w*.66,y-h+4],[x-w*.47,y-h-12],[x,y-h-64],[x+w*.57,y-h-3],[x+w*.65+side,y-h-12],[x+w*.53,y-h+9]],roof);
+  polygon([[x,y-h-64],[x+side,y-h-78],[x+w*.65+side,y-h-12],[x+w*.57,y-h-3]],'#283144');
+  for (let i=1;i<6;i++) {
+    const span = w*.1*i;
+    const row = y-h-58+i*10;
+    polygon([[x-span,row],[x+span,row],[x+span+3,row+3],[x-span-4,row+3]],'#fff0d224');
+  }
+  ctx.fillStyle = '#3f2b2b';
+  ctx.fillRect(x-13,y-49,26,49);
+  for (const windowX of [x-w*.34,x+w*.17]) {
+    ctx.fillStyle = '#3f3036';
+    ctx.fillRect(windowX,y-h+25,21,28);
+    ctx.fillStyle = dusk ? '#ffbd69' : '#c1d4ce';
+    ctx.fillRect(windowX+3,y-h+29,15,19);
+    ctx.fillStyle = '#67473d';
+    ctx.fillRect(windowX+9,y-h+29,2,19);
+  }
 }
 function drawStroke(stroke) {
   const [first, ...rest] = stroke.points;
@@ -319,7 +499,7 @@ if(o.type==='enemy'||o.type==='npc'){
 if(o.type==='bridge'){ctx.fillStyle='#875e44';ctx.fillRect(x-90,y-12,180,14);for(let i=-80;i<=80;i+=25)ctx.fillRect(x+i,y-36,6,25)}
 }
 function download(name,blob){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)}
-function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects,strokes,blank}}
+function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects,strokes,blank,visualStyle}}
 $('generate').onclick = () => { remember(); make(); fitMap(); };
 $('random').onclick = () => {
   remember();
@@ -438,7 +618,7 @@ canvas.addEventListener('pointerdown', event => {
   }
   render();
 });
-$('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Vẽ hoàn chỉnh một bản đồ game 2.5D đi cảnh chiều ngang. Lấp đầy toàn bộ khung hình bằng phong cảnh, địa hình chơi được và các chi tiết trong mô tả. Không chèn chữ, giao diện hoặc khung viền. Mô tả: '+$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;selectBrush();render();status('AI đã vẽ toàn bộ bản đồ. Có thể vẽ thêm bằng cọ và xuất PNG để giữ ảnh AI.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
+$('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Vẽ hoàn chỉnh một bản đồ game 2.5D đi cảnh chiều ngang. Lấp đầy toàn bộ khung hình bằng phong cảnh, địa hình chơi được và các chi tiết trong mô tả. Giữ góc nhìn ngang nhất quán, tách lớp cận cảnh, trung cảnh và hậu cảnh. Dùng phối cảnh không khí, vật liệu có kết cấu và bóng đổ thống nhất. Chừa hành lang di chuyển rõ ràng gần phần dưới khung hình. Không chèn chữ, giao diện hoặc khung viền. Ánh sáng: '+($('visualStyle').value==='sunset'?'hoàng hôn':'ban ngày')+'. Mô tả: '+$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;selectBrush();render();status('AI đã vẽ toàn bộ bản đồ. Có thể vẽ thêm bằng cọ và xuất PNG để giữ ảnh AI.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
 
 const actionNames = ['idle', 'move', 'attack', 'skill', 'hit'];
 const effectNames = ['wave', 'fire', 'slash'];
