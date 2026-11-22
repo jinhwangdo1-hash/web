@@ -34,6 +34,12 @@ button:disabled { opacity: .45; cursor: default; }
 .brush-controls label { margin: 0; }
 .brush-controls input { width: 48px; min-height: 44px; padding: 5px; }
 .brush-controls input[type=number] { width: 72px; }
+
+.animation-panel { margin-top: 18px; }
+.animation-panel summary { cursor: pointer; }
+.animation-panel .row { margin-bottom: 10px; }
+.animation-panel output { display: block; margin-block: 8px; font-size: .85rem; }
+.animation-panel canvas { width: 100%; height: auto; max-height: none; display: block; border-radius: 8px; cursor: default; touch-action: auto; box-shadow: none; }
 </style></head><body>
 <header><div><strong>✦ THIÊN ĐẠO · AI MAP STUDIO V3</strong><br><small>AI bố trí map miễn phí · Ninja & Tu tiên · Xuất Godot 4</small></div><div><a href="map-hd.html">Map Studio V2</a> · <a href="index.html">Trang chủ</a></div></header>
 <div class="app"><aside>
@@ -47,6 +53,24 @@ button:disabled { opacity: .45; cursor: default; }
 <label for="endpoint">Endpoint tạo ảnh AI</label><input id="endpoint" type="url" placeholder="https://your-backend.example/api/generate-image">
 <button id="aiImage" style="margin-top:10px">🎨 AI vẽ toàn bộ bản đồ</button>
 <p class="note">AI vẽ cả khung hình từ mô tả. Bạn có thể vẽ thêm bằng cọ và xuất ảnh PNG. Dữ liệu Godot dùng địa hình và đối tượng của bộ bố trí map.</p>
+</details>
+<details class="animation-panel" id="animationPanel">
+<summary>Nhân vật và chuyển động</summary>
+<label for="actor">Nhân vật hoặc quái</label><select id="actor"></select>
+<label for="action">Động tác</label><select id="action">
+<option value="idle">Đứng yên</option><option value="move">Di chuyển</option>
+<option value="attack">Tấn công</option><option value="skill">Tung kỹ năng</option>
+<option value="hit">Trúng đòn</option></select>
+<label for="spriteFile">Ảnh hoặc sprite sheet của động tác</label>
+<input id="spriteFile" type="file" accept="image/png,image/jpeg,image/webp">
+<p class="note">Dùng ảnh PNG, JPEG hoặc WebP tối đa 2 MB. Với sprite sheet, xếp các khung cùng kích thước thành một hàng ngang.</p>
+<div class="row"><div><label for="spriteFrames">Số khung</label><input id="spriteFrames" type="number" min="1" max="24" value="1"></div>
+<div><label for="spriteFps">Khung/giây</label><input id="spriteFps" type="number" min="1" max="30" value="8"></div></div>
+<label for="skillEffect">Hiệu ứng kỹ năng</label><select id="skillEffect">
+<option value="wave">Sóng năng lượng</option><option value="fire">Quả cầu lửa</option><option value="slash">Nhát chém</option></select>
+<div class="row" style="margin-top:10px"><button id="playAction">Xem động tác</button><button id="stopAction">Dừng</button></div>
+<output id="animationStatus" aria-live="polite"></output>
+<canvas id="animationPreview" width="320" height="160" aria-label="Xem trước chuyển động"></canvas>
 </details>
 </aside><main class="stage"><div class="bar"><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
 <div><label for="tool">Công cụ</label><select id="tool"><option value="brush">Cọ vẽ tay</option><option value="house" selected>Đặt nhà / công trình</option><option value="tree">Đặt cây</option><option value="rock">Đặt đá</option><option value="enemy">Đặt quái</option><option value="npc">Đặt NPC</option><option value="erase">Xóa đối tượng</option></select></div>
@@ -137,6 +161,7 @@ function restore(data) {
   }
   width.value = data.width;
   render();
+  syncAnimationEditor();
   if (sizeChanged) fitMap();
 }
 function moveHistory(from, to, message) {
@@ -209,6 +234,7 @@ render();
 const applied = [waterfall && 'Thác nước', cherry && 'Anh đào',
   houseSpacing < 1 && 'Nhiều nhà', houseSpacing > 1 && 'Ít nhà',
   (enemyMatch || enemyCount === 0) && enemyCount + ' quái'].filter(Boolean);
+syncAnimationEditor();
 status('Đã tạo ' + objects.length + ' đối tượng · Seed ' + seed + (applied.length ? ' · ' + applied.join(', ') : ''));}
 function surface(x){let i=Math.max(0,Math.min(ground.length-2,Math.floor(x/40))),a=ground[i],b=ground[i+1];return a.y+(b.y-a.y)*(x-a.x)/40}
 function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
@@ -226,6 +252,7 @@ ctx.beginPath();ctx.moveTo(0,ground[0].y);ground.forEach(p=>ctx.lineTo(p.x,p.y))
 objects.filter(o=>o.type==='house'||o.type==='bridge').forEach(drawObject);objects.filter(o=>!['house','bridge'].includes(o.type)).forEach(drawObject);
 }
 strokes.forEach(drawStroke);
+refreshActors();
 }
 function drawStroke(stroke) {
   const [first, ...rest] = stroke.points;
@@ -264,7 +291,13 @@ function drawObject(o){let x=o.x,y=o.y;
 if(o.type==='house'){let w=o.w||120,h=o.h||130,v=o.variant||0;ctx.fillStyle=['#d5aa78','#b78d6b','#d5c6a0','#a6bdad'][v%4];ctx.fillRect(x-w/2,y-h,w,h);ctx.strokeStyle='#604c46';ctx.lineWidth=7;ctx.strokeRect(x-w/2,y-h,w,h);polygon([[x-w*.65,y-h],[x,y-h-55],[x+w*.65,y-h]],theme==='ninja'?'#344c6b':'#6b548f');ctx.fillStyle='#483b36';ctx.fillRect(x-17,y-55,34,55);ctx.fillStyle='#d5e5e7';ctx.fillRect(x-w*.35,y-h+20,27,27);ctx.fillRect(x+w*.15,y-h+20,27,27)}
 if(o.type==='tree'){let s=o.scale||1;ctx.fillStyle='#755440';ctx.fillRect(x-9*s,y-88*s,18*s,88*s);ellipse(x,y-110*s,42*s,43*s,o.cherry?'#ed9fc2':theme==='ninja'?(o.variant%2?'#ed9fc2':'#6cba7d'):'#91d5b7');ellipse(x-20*s,y-130*s,25*s,27*s,o.cherry||theme==='ninja'?'#f6bdd5':'#b0e5cd')}
 if(o.type==='rock'){ellipse(x,y-12,24*(o.scale||1),15*(o.scale||1),'#778c91')}
-if(o.type==='enemy'||o.type==='npc'){ellipse(x,y-28,17,23,o.type==='npc'?'#5a77d9':'#b85762');ellipse(x,y-57,14,15,'#f2c39d');ctx.fillStyle='#172237';ctx.fillRect(x-13,y-72,26,8);ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillText(o.type==='npc'?(o.name||'NPC'):'Lv '+(o.lv||1),x,y-85)}
+if(o.type==='enemy'||o.type==='npc'){
+  const sprite = loadedSprite(o.animations?.idle?.source);
+  if (sprite) {
+    paintSprite(ctx, sprite, o.animations.idle, 0, x, y, 100);
+    return;
+  }
+  ellipse(x,y-28,17,23,o.type==='npc'?'#5a77d9':'#b85762');ellipse(x,y-57,14,15,'#f2c39d');ctx.fillStyle='#172237';ctx.fillRect(x-13,y-72,26,8);ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillText(o.type==='npc'?(o.name||'NPC'):'Lv '+(o.lv||1),x,y-85)}
 if(o.type==='bridge'){ctx.fillStyle='#875e44';ctx.fillRect(x-90,y-12,180,14);for(let i=-80;i<=80;i+=25)ctx.fillRect(x+i,y-36,6,25)}
 }
 function download(name,blob){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)}
@@ -293,7 +326,8 @@ $('file').onchange = async event => {
     const validObjects = Array.isArray(data.objects) && data.objects.every(object =>
       Number.isFinite(object?.x) && Number.isFinite(object.y)
       && ['house', 'tree', 'rock', 'enemy', 'npc', 'bridge', 'waterfall'].includes(object.type)
-      && (object.scale === undefined || (Number.isFinite(object.scale) && object.scale > 0)));
+      && (object.scale === undefined || (Number.isFinite(object.scale) && object.scale > 0))
+      && validAnimations(object.animations));
     const validStrokes = data.strokes === undefined || (Array.isArray(data.strokes) && data.strokes.every(stroke =>
       /^#[0-9a-f]{6}$/i.test(stroke?.color) && Number.isFinite(stroke.size) && stroke.size >= 1 && stroke.size <= 128
       && Array.isArray(stroke.points) && stroke.points.length > 0
@@ -387,6 +421,221 @@ canvas.addEventListener('pointerdown', event => {
   render();
 });
 $('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Vẽ hoàn chỉnh một bản đồ game 2.5D đi cảnh chiều ngang. Lấp đầy toàn bộ khung hình bằng phong cảnh, địa hình chơi được và các chi tiết trong mô tả. Không chèn chữ, giao diện hoặc khung viền. Mô tả: '+$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;selectBrush();render();status('AI đã vẽ toàn bộ bản đồ. Có thể vẽ thêm bằng cọ và xuất PNG để giữ ảnh AI.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
+
+const actionNames = ['idle', 'move', 'attack', 'skill', 'hit'];
+const effectNames = ['wave', 'fire', 'slash'];
+const preview = $('animationPreview');
+const previewCtx = preview.getContext('2d');
+const spriteCache = new WeakMap();
+let actorListKey = '';
+let previewFrame = null;
+let previewStarted = null;
+
+function validAnimations(animations) {
+  if (animations === undefined) return true;
+  return animations !== null && typeof animations === 'object' && !Array.isArray(animations)
+    && Object.entries(animations).every(([action, clip]) =>
+      actionNames.includes(action) && clip && Number.isInteger(clip.frames)
+      && clip.frames >= 1 && clip.frames <= 24 && Number.isInteger(clip.fps)
+      && clip.fps >= 1 && clip.fps <= 30 && effectNames.includes(clip.effect)
+      && (clip.source === undefined || (typeof clip.source.data === 'string'
+        && clip.source.data.length <= 2_900_000
+        && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/]+=*$/i.test(clip.source.data))));
+}
+
+function selectedActor() {
+  if ($('actor').value === '') return null;
+  const actor = objects[Number($('actor').value)];
+  return actor?.type === 'npc' || actor?.type === 'enemy' ? actor : null;
+}
+function refreshActors() {
+  const entries = objects.flatMap((object, index) => {
+    if (object.type === 'npc') return [[index, object.name || 'NPC']];
+    if (object.type === 'enemy') return [[index, 'Quái Lv ' + (object.lv || 1)]];
+    return [];
+  });
+  const key = JSON.stringify(entries);
+  if (key !== actorListKey) {
+    actorListKey = key;
+    const select = $('actor');
+    const previous = select.value;
+    select.replaceChildren(...entries.map(([index, label]) => new Option(label + ' · x ' + Math.round(objects[index].x), index)));
+    if (entries.some(([index]) => String(index) === previous)) select.value = previous;
+    if (!entries.length) select.add(new Option('Chưa có NPC hoặc quái', ''));
+  }
+  for (const name of ['action', 'spriteFile', 'spriteFrames', 'spriteFps', 'skillEffect', 'playAction']) {
+    $(name).disabled = !selectedActor();
+  }
+}
+function defaultClip() { return {frames: 1, fps: 8, effect: 'wave'}; }
+function currentClip() {
+  return selectedActor()?.animations?.[$('action').value] || defaultClip();
+}
+function spriteAsset(source) {
+  if (!source) return null;
+  let asset = spriteCache.get(source);
+  if (asset) return asset;
+  const image = new Image();
+  asset = {image, ready: false};
+  spriteCache.set(source, asset);
+  image.onload = () => {
+    asset.ready = true;
+    render();
+    if (previewFrame === null) paintPreview(0);
+  };
+  image.onerror = () => { $('animationStatus').value = 'Không đọc được ảnh của động tác.'; };
+  image.src = source.data;
+  return asset;
+}
+function loadedSprite(source) {
+  const asset = spriteAsset(source);
+  return asset?.ready ? asset.image : null;
+}
+function paintSprite(target, image, clip, seconds, x, feet, height) {
+  const frames = image.naturalWidth % clip.frames === 0 ? clip.frames : 1;
+  const frameWidth = image.naturalWidth / frames;
+  const frame = Math.floor(seconds * clip.fps) % frames;
+  const scale = Math.min(height / image.naturalHeight, height * 1.5 / frameWidth);
+  const width = frameWidth * scale;
+  const scaledHeight = image.naturalHeight * scale;
+  target.drawImage(image, frame * frameWidth, 0, frameWidth, image.naturalHeight, x - width / 2, feet - scaledHeight, width, scaledHeight);
+}
+
+function paintPreview(seconds) {
+  const target = previewCtx;
+  target.clearRect(0, 0, preview.width, preview.height);
+  target.fillStyle = '#141f36';
+  target.fillRect(0, 0, preview.width, preview.height);
+  target.fillStyle = '#344563';
+  target.fillRect(14, 127, 292, 2);
+  const actor = selectedActor();
+  if (!actor) return;
+  const action = $('action').value;
+  const clip = currentClip();
+  const fallback = actor.animations?.idle;
+  const spriteClip = clip.source ? clip : fallback;
+  const image = loadedSprite(spriteClip?.source);
+  const phase = seconds % 1.2 / 1.2;
+  const pulse = Math.sin(Math.PI * phase);
+  const x = action === 'move' ? 80 + phase * 160
+    : action === 'attack' ? 140 + 45 * pulse
+    : action === 'hit' ? 140 - 14 * pulse : 140;
+  const feet = 127 - (action === 'move' ? Math.abs(Math.sin(phase * Math.PI * 4)) * 8 : 3 * pulse);
+  if (image) paintSprite(target, image, spriteClip, seconds, x, feet, 90);
+  else {
+    target.fillStyle = actor.type === 'enemy' ? '#b85762' : '#6887ef';
+    target.fillRect(x - 17, feet - 47, 34, 46);
+    target.fillStyle = '#f2c39d';
+    target.beginPath();
+    target.arc(x, feet - 59, 14, 0, Math.PI * 2);
+    target.fill();
+  }
+  if (action !== 'skill' || seconds === 0) return;
+  target.strokeStyle = clip.effect === 'fire' ? '#ff9657' : '#8cdcff';
+  target.fillStyle = target.strokeStyle;
+  target.lineWidth = 4;
+  target.beginPath();
+  if (clip.effect === 'slash') {
+    target.arc(x + 20, 82, 24 + 12 * pulse, -1.2, 1.1);
+    target.stroke();
+  } else {
+    target.arc(x + 28 + 118 * phase, 83, (clip.effect === 'wave' ? 24 : 12) * pulse + 2, 0, Math.PI * 2);
+    if (clip.effect === 'fire') target.fill();
+    else target.stroke();
+  }
+}
+
+function syncAnimationEditor() {
+  const clip = currentClip();
+  $('spriteFrames').value = clip.frames;
+  $('spriteFps').value = clip.fps;
+  $('skillEffect').value = clip.effect;
+  $('animationStatus').value = clip.source ? 'Đã gán ảnh cho động tác này.' : 'Chưa gán ảnh riêng cho động tác này.';
+  paintPreview(0);
+}
+function saveClip(patch) {
+  const actor = selectedActor();
+  if (!actor) return;
+  remember();
+  const action = $('action').value;
+  objects[Number($('actor').value)] = {
+    ...actor,
+    animations: { ...actor.animations, [action]: { ...currentClip(), ...patch } }
+  };
+  syncAnimationEditor();
+  render();
+}
+function boundedInput(id, max, fallback) {
+  return Math.min(max, Math.max(1, Math.round(Number($(id).value) || fallback)));
+}
+$('actor').onchange = syncAnimationEditor;
+$('action').onchange = syncAnimationEditor;
+$('spriteFrames').onchange = () => {
+  const frames = boundedInput('spriteFrames', 24, 1);
+  const image = loadedSprite(currentClip().source);
+  if (image && image.naturalWidth % frames !== 0) {
+    syncAnimationEditor();
+    $('animationStatus').value = 'Chiều rộng ảnh phải chia hết cho số khung.';
+    return;
+  }
+  saveClip({frames});
+};
+$('spriteFps').onchange = () => saveClip({fps: boundedInput('spriteFps', 30, 8)});
+$('skillEffect').onchange = () => saveClip({effect: $('skillEffect').value});
+$('spriteFile').onchange = event => {
+  const input = event.target;
+  const file = input.files[0];
+  const actor = selectedActor();
+  const action = $('action').value;
+  const pickedRevision = revision;
+  input.value = '';
+  if (!file || !actor) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+    $('animationStatus').value = 'Chọn ảnh PNG, JPEG hoặc WebP tối đa 2 MB.';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => { $('animationStatus').value = 'Không đọc được tệp ảnh.'; };
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => { $('animationStatus').value = 'Tệp không chứa ảnh hợp lệ.'; };
+    image.onload = () => {
+      if (selectedActor() !== actor || $('action').value !== action || pickedRevision !== revision) return;
+      const frames = currentClip().frames;
+      if (image.naturalWidth % frames !== 0) {
+        $('animationStatus').value = 'Chiều rộng ảnh phải chia hết cho số khung.';
+        return;
+      }
+      const source = {data: reader.result};
+      spriteCache.set(source, {image, ready: true});
+      saveClip({source});
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+};
+function stopPreview() {
+  if (previewFrame !== null) cancelAnimationFrame(previewFrame);
+  previewFrame = null;
+  previewStarted = null;
+  paintPreview(0);
+}
+function playPreview(timestamp) {
+  previewStarted ??= timestamp;
+  paintPreview((timestamp - previewStarted) / 1000);
+  previewFrame = requestAnimationFrame(playPreview);
+}
+$('playAction').onclick = () => {
+  stopPreview();
+  previewFrame = requestAnimationFrame(playPreview);
+};
+$('stopAction').onclick = stopPreview;
+$('animationPanel').ontoggle = () => {
+  if ($('animationPanel').open) syncAnimationEditor();
+  else stopPreview();
+};
+
 make();
 fitMap();
+syncAnimationEditor();
 </script></body></html>
