@@ -79,6 +79,9 @@ body.game-export { background: #040816; }
 <details class="region-panel model3d-panel" id="modelPanel">
 <summary>Tạo nhân vật 3D từ ảnh</summary>
 <p class="note">Dùng ảnh toàn thân nền trơn hoặc trong suốt. Ảnh được xử lý ngay trên thiết bị. Mặt sau được dựng theo đường viền ảnh.</p>
+<label for="modelPreset">Mẫu nhân vật</label>
+<select id="modelPreset"><option value="jade">Hộ vệ ngọc</option><option value="ember">Nhẫn giả hỏa</option><option value="frost">Kiếm tu băng</option></select>
+<div class="row" style="margin-top:8px"><button id="buildPreset">Dựng mẫu 3D</button><button id="savePreset">Tải ảnh mẫu</button></div>
 <label for="modelPhoto">Ảnh nhân vật</label><input id="modelPhoto" type="file" accept="image/png,image/jpeg,image/webp">
 <label for="modelDepth">Độ dày</label><input id="modelDepth" type="range" min="10" max="55" value="27">
 <label for="modelAngle">Góc xoay</label><input id="modelAngle" type="range" min="-180" max="180" value="22">
@@ -1474,9 +1477,9 @@ let modelRequest=0;
 
 function rasterForModel(image) {
   const scratch=document.createElement('canvas');
-  const size=Math.min(1,54/Math.max(image.naturalWidth,image.naturalHeight));
-  const width=scratch.width=Math.max(1,Math.round(image.naturalWidth*size));
-  const height=scratch.height=Math.max(1,Math.round(image.naturalHeight*size));
+  const size=Math.min(1,84/Math.max(image.naturalWidth||image.width,image.naturalHeight||image.height));
+  const width=scratch.width=Math.max(1,Math.round((image.naturalWidth||image.width)*size));
+  const height=scratch.height=Math.max(1,Math.round((image.naturalHeight||image.height)*size));
   const raster=scratch.getContext('2d',{willReadFrequently:true});
   raster.drawImage(image,0,0,width,height);
   return raster.getImageData(0,0,width,height);
@@ -1505,7 +1508,7 @@ function meshFromRaster({width,height,data},depth) {
     for(const dx of [-1,0]) for(const dy of [-1,0]) {
       if(solid(x+dx,y+dy)){total+=distance[(y+dy)*width+x+dx];count++;}
     }
-    const upl=.47+.53*Math.min(1,(count?total/count:0)/6);
+    const upl=.38+.62*Math.min(1,(count?total/count:0)/9);
     return [(x-width/2)*step,(height-y)*step,sign*depth*upl];
   }
   function face(corners,color) {
@@ -1579,9 +1582,112 @@ function paintModel(seconds=0) {
     points.forEach(([x,y],index)=>index?modelCtx.lineTo(x,y):modelCtx.moveTo(x,y));
     modelCtx.closePath();
     modelCtx.fillStyle='rgb('+color.join(',')+')';
+    modelCtx.strokeStyle=modelCtx.fillStyle;
+    modelCtx.lineWidth=.4;
     modelCtx.fill();
+    modelCtx.stroke();
   }
 }
+
+const modelPresets={
+  jade:{dark:'#10222b',mid:'#23645d',light:'#79c2a1',metal:'#d1a35b',glow:'#ffdf9c',cloth:'#285e52',skin:'#dca788',eyes:'#f3deaa'},
+  ember:{dark:'#2c1421',mid:'#8b3039',light:'#e48160',metal:'#bc7544',glow:'#ffd289',cloth:'#82343c',skin:'#d89e7a',eyes:'#ffd9a0'},
+  frost:{dark:'#1b2242',mid:'#3c5590',light:'#90c5ed',metal:'#82a5c9',glow:'#d4f2ff',cloth:'#384d8b',skin:'#e0b8a6',eyes:'#cbeaff'}
+};
+function portraitPreset(key) {
+  const p=modelPresets[key];
+  const art=document.createElement('canvas');
+  art.width=412;
+  art.height=536;
+  const c=art.getContext('2d');
+  c.translate(206,10);
+  const ink='#10172a';
+  function path(description,fill,line=ink,width=2.5) {
+    const shape=new Path2D(description);
+    if(fill){c.fillStyle=fill;c.fill(shape);}
+    if(line){c.strokeStyle=line;c.lineWidth=width;c.lineJoin='round';c.lineCap='round';c.stroke(shape);}
+  }
+  function metal(x1,y1,x2,y2) {
+    const grad=c.createLinearGradient(x1,y1,x2,y2);
+    grad.addColorStop(0,p.light);
+    grad.addColorStop(.37,p.mid);
+    grad.addColorStop(1,p.dark);
+    return grad;
+  }
+  function dot(x,y,r,color) {
+    c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=color;c.fill();
+  }
+  function reflected(draw) {
+    draw();c.save();c.scale(-1,1);draw();c.restore();
+  }
+
+  path('M-48 130 Q0 116 48 130 L77 275 L89 427 Q52 406 22 431 L0 407 L-22 431 Q-52 406 -89 427 L-77 275Z',p.dark);
+  reflected(()=>{
+    path('M13 250 Q29 234 54 247 L65 338 L62 409 L72 465 L61 492 L34 492 L24 469 L23 401 L10 330Z',metal(16,265,74,441));
+    path('M22 353 L51 347 L66 371 L60 420 L33 425 L23 399Z',metal(30,355,63,407),p.metal,1.6);
+    path('M28 424 L59 416 L69 456 L63 482 L80 489 L83 505 L27 506 L20 490Z',p.dark);
+    path('M30 432 L52 427 L59 459 L31 470Z',metal(31,433,58,466),p.metal,1.5);
+    path('M33 489 L57 484 L77 493 L79 500 L30 501Z',p.mid,ink,1.4);
+    path('M38 361 L34 402 M42 438 L37 454',null,p.glow,1.5);
+    dot(43,376,3.4,p.metal);
+    path('M48 123 Q80 120 99 147 L132 198 L167 226 L177 254 L152 271 L122 241 L92 220 L64 188 L40 175Z',metal(51,137,166,253));
+    path('M58 126 Q81 119 100 150 L85 179 L55 171 L43 151Z',metal(54,124,93,176),p.metal,2);
+    path('M54 144 L83 141 L94 153 L84 161 L59 156Z',p.dark,p.glow,1.3);
+    path('M110 207 L135 194 L163 225 L145 245Z',metal(118,201,163,239),p.metal,2);
+    path('M147 243 L162 227 Q182 235 186 252 L178 271 L161 273 L151 263Z',p.dark);
+    path('M157 247 L170 242 L177 251 L173 260 L160 261Z',p.mid,p.metal,1.3);
+  });
+
+  path('M-59 144 L-37 120 L37 120 L59 144 L48 219 L55 269 Q0 291 -55 269 L-48 219Z',metal(-62,132,61,282));
+  path('M-47 147 Q-18 142 0 168 Q18 142 47 147 L36 186 L0 202 L-36 186Z',metal(-37,144,38,196),p.metal,2);
+  path('M-39 193 L-23 200 L0 210 L23 200 L39 193 L34 218 L0 233 L-34 218Z',p.dark,p.metal,1.4);
+  path('M-44 230 L44 230 L52 249 L-52 249Z',p.cloth,ink,2);
+  path('M-19 235 L0 223 L19 235 L15 251 L0 259 L-15 251Z',p.metal,p.dark,2);
+  path('M0 230 L9 239 L0 250 L-9 239Z',p.glow,p.dark,1.4);
+  path('M-14 258 L15 258 L22 337 L0 365 L-21 337Z',p.cloth,p.metal,2);
+  path('M0 272 L7 294 L0 313 L-7 294Z M-9 328 L0 342 L9 328',null,p.glow,1.6);
+  reflected(()=>{
+    path('M20 257 Q40 251 54 247 L69 314 L45 336 L23 312Z',metal(27,256,63,329),p.metal,1.8);
+    path('M31 267 L47 266 L55 297 L44 311Z',p.dark,p.light,1);
+    dot(44,276,3,p.metal);
+  });
+  path('M-30 99 L30 99 L30 128 L0 147 L-30 128Z',p.dark,p.metal,2);
+  path('M-48 57 Q-46 16 0 14 Q46 16 48 57 L47 98 L29 126 L0 136 L-29 126 L-47 98Z',metal(-37,18,49,123));
+  path('M-43 68 Q-20 55 0 61 Q20 55 43 68 L35 94 L0 103 L-35 94Z',p.skin,ink,2);
+  path('M-46 90 L-31 85 L0 95 L31 85 L46 90 L37 111 L17 126 L0 131 L-17 126 L-37 111Z',p.dark);
+  path('M-40 102 L-20 111 L0 116 L20 111 L40 102',null,p.light,1.7);
+  reflected(()=>{
+    path('M6 76 L15 72 L33 73 L25 81 L12 83Z',p.eyes,ink,1.6);
+    dot(19,77,2.3,p.dark);
+    path('M10 68 L32 64 M26 103 L34 107',null,p.metal,1.4);
+  });
+  path('M-45 56 Q0 37 45 56 L46 70 Q0 58 -46 70Z',p.dark,p.metal,2);
+  if(key==='jade') {
+    path('M-22 50 L-19 21 L0 3 L19 21 L22 50 L0 61Z',p.metal,p.dark,2);
+    path('M0 11 L11 29 L0 49 L-11 29Z',p.light,p.glow,1.5);
+  } else if(key==='ember') {
+    reflected(()=>path('M17 53 L23 30 L35 12 L43 10 L37 28 L39 47 L31 57Z',p.metal,p.dark,2));
+    path('M0 34 L10 48 L0 58 L-10 48Z',p.glow,p.dark,2);
+  } else {
+    path('M-33 52 L-28 32 L-12 36 L0 8 L12 36 L28 32 L33 52 L0 60Z',p.metal,p.dark,2);
+    path('M0 23 L9 43 L0 56 L-9 43Z',p.glow,p.mid,1.5);
+  }
+  return art;
+}
+function buildSelectedPreset() {
+  ++modelRequest;
+  stopModelMotion();
+  const portrait=portraitPreset($('modelPreset').value);
+  modelRaster=rasterForModel(portrait);
+  rebuildModel();
+  $('modelStatus').value='Mẫu đã sẵn sàng. Bạn có thể xoay, thử chuyển động hoặc tải GLB.';
+}
+$('buildPreset').onclick=buildSelectedPreset;
+$('savePreset').onclick=()=>{
+  const preset=$('modelPreset').value;
+  portraitPreset(preset).toBlob(blob=>{if(blob) download('nhan-vat-'+preset+'.png',blob);},'image/png');
+};
+
 function rebuildModel() {
   characterModel=meshFromRaster(modelRaster,Number($('modelDepth').value)/100);
   $('modelSave').disabled=false;
@@ -1638,14 +1744,19 @@ $('modelPhoto').onchange=event=>{
 };
 $('modelDepth').oninput=()=>{if(modelRaster) rebuildModel();};
 $('modelAngle').oninput=()=>{if(modelFrame===null) paintModel();};
-$('modelPanel').ontoggle=()=>{if(!$('modelPanel').open) stopModelMotion(); else paintModel();};
+$('modelPanel').ontoggle=()=>{
+  if(!$('modelPanel').open) stopModelMotion();
+  else if(!characterModel && modelRequest===0) buildSelectedPreset();
+  else paintModel();
+};
 $('modelMotion').onclick=()=>{
   if(modelFrame!==null){stopModelMotion();paintModel();return;}
   $('modelMotion').setAttribute('aria-pressed','true');
   let started=null;
+  let lastPaint=-Infinity;
   function frame(timestamp) {
     started??=timestamp;
-    paintModel((timestamp-started)/1000);
+    if(timestamp-lastPaint>=32){paintModel((timestamp-started)/1000);lastPaint=timestamp;}
     modelFrame=requestAnimationFrame(frame);
   }
   modelFrame=requestAnimationFrame(frame);
