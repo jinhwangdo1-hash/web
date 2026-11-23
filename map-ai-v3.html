@@ -56,6 +56,10 @@ button:disabled { opacity: .45; cursor: default; }
 #platformControls label, #collisionControl { margin: 0; }
 #collisionControl { display: inline-flex; gap: 7px; align-items: center; }
 #collisionControl input { width: auto; accent-color: #8ee9ef; }
+.region-panel { margin-top: 18px; } .region-panel summary { cursor: pointer; } .region-panel button { margin-top: 8px; }
+
+body.game-export > header, body.game-export > .app, body.game-export #closeTest { display: none; }
+body.game-export { background: #040816; }
 </style></head><body>
 <header><div><strong>✦ THIÊN ĐẠO · AI MAP STUDIO V3</strong><br><small>AI bố trí map miễn phí · Ninja & Tu tiên · Xuất Godot 4</small></div><div><a href="map-hd.html">Map Studio V2</a> · <a href="index.html">Trang chủ</a></div></header>
 <div class="app"><aside>
@@ -69,6 +73,18 @@ button:disabled { opacity: .45; cursor: default; }
 <div class="row"><div><label for="level">Cấp quái</label><select id="level"><option value="1">Lv 1–5</option><option value="6">Lv 6–12</option><option value="13">Lv 13–20</option><option value="21">Lv 21–30</option></select></div><div><label for="width">Chiều dài</label><select id="width"><option value="1600">Ngắn</option><option value="2400" selected>Trung bình</option><option value="3600">Dài</option><option value="4800">Rất dài</option></select></div></div>
 <label for="seed">Seed (để tạo lại cùng map)</label><input id="seed" type="number" value="2027">
 <div class="row" style="margin-top:12px"><button class="primary" id="generate">✨ AI bố trí map</button><button id="random">🎲 Seed mới</button></div>
+<details class="region-panel">
+<summary>Ghép map theo khu vực</summary>
+<label for="regionName">Tên khu mới</label><input id="regionName" maxlength="60" placeholder="Ví dụ: Rừng sau làng">
+<label for="regionBiome">Địa hình</label><select id="regionBiome">
+<option value="village">Làng</option><option value="forest">Rừng</option><option value="waterfall">Thác nước</option><option value="ridge">Đồi đá</option>
+</select>
+<label for="regionPrompt">Chi tiết thêm</label><input id="regionPrompt" placeholder="Ví dụ: 6 quái, cây anh đào">
+<label for="regionWidth">Chiều dài khu mới</label><select id="regionWidth"><option value="800">800 px</option><option value="1200">1.200 px</option><option value="1600">1.600 px</option><option value="2400">2.400 px</option></select>
+<button id="addRegion">Tạo và nối vào cuối map</button>
+<label for="regionList">Khu vực trong map</label><select id="regionList"></select>
+<button id="visitRegion">Xem khu vực</button>
+</details>
 <details class="hd-panel"><summary>AI tạo ảnh HD</summary><p class="note">Nhập URL backend HTTPS của bạn. Backend nhận POST JSON {prompt,style,width,height} và trả JSON {image_url} hoặc {image_base64}. Không nhập API key vào website.</p>
 <label for="endpoint">Endpoint tạo ảnh AI</label><input id="endpoint" type="url" placeholder="https://your-backend.example/api/generate-image">
 <button id="aiImage" style="margin-top:10px">🎨 AI vẽ toàn bộ bản đồ</button>
@@ -81,6 +97,13 @@ button:disabled { opacity: .45; cursor: default; }
 <option value="idle">Đứng yên</option><option value="move">Di chuyển</option>
 <option value="attack">Tấn công</option><option value="skill">Tung kỹ năng</option>
 <option value="hit">Trúng đòn</option></select>
+<details class="region-panel">
+<summary>Tạo nhân vật từ ảnh toàn thân</summary>
+<p class="note">Dùng ảnh một người đứng thẳng, thấy rõ tay chân và có nền trong suốt hoặc nền trơn. Trang tự chia ảnh thành đầu, thân, hai tay và hai chân. Nền phức tạp có thể cần chuẩn bị ảnh PNG trong suốt trước.</p>
+<label for="rigFile">Ảnh toàn thân</label><input id="rigFile" type="file" accept="image/png,image/jpeg,image/webp">
+<label for="rigTolerance">Mức tách nền</label><input id="rigTolerance" type="range" min="8" max="95" value="34">
+<button id="removeRig">Gỡ ảnh nhân vật</button>
+</details>
 <label for="spriteFile">Ảnh hoặc sprite sheet của động tác</label>
 <input id="spriteFile" type="file" accept="image/png,image/jpeg,image/webp">
 <p class="note">Dùng ảnh PNG, JPEG hoặc WebP tối đa 2 MB. Với sprite sheet, xếp các khung cùng kích thước thành một hàng ngang.</p>
@@ -92,7 +115,7 @@ button:disabled { opacity: .45; cursor: default; }
 <output id="animationStatus" aria-live="polite"></output>
 <canvas id="animationPreview" width="320" height="160" aria-label="Xem trước chuyển động"></canvas>
 </details>
-</aside><main class="stage"><div class="bar"><button id="testMap" class="primary">Chơi thử</button><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
+</aside><main class="stage"><div class="bar"><button id="exportGame">Xuất game HTML</button><button id="testMap" class="primary">Chơi thử</button><button id="png">⬇ PNG</button><button id="json">⬇ JSON</button><button id="godot">⬇ Godot JSON</button><button id="save">💾 Lưu trên máy</button><button id="load">📂 Mở dự án</button><input type="file" id="file" accept=".json,application/json" hidden></div><div class="bar workspace-tools" aria-label="Công cụ chỉnh sửa">
 <div><label for="tool">Công cụ</label><select id="tool"><option value="brush">Cọ vẽ tay</option><option value="house" selected>Đặt nhà / công trình</option><option value="tree">Đặt cây</option><option value="rock">Đặt đá</option><option value="enemy">Đặt quái</option><option value="npc">Đặt NPC</option><option value="terrain">Kéo mặt đất</option><option value="platform">Đặt bệ nhảy</option><option value="erase">Xóa đối tượng</option></select></div>
 <div id="brushControls" class="brush-controls" hidden>
 <label for="brushColor">Màu</label><input id="brushColor" type="color" value="#fbce82">
@@ -114,10 +137,12 @@ button:disabled { opacity: .45; cursor: default; }
 <button data-play="jump">Nhảy · Space</button><button data-play="attack">Đánh · J</button>
 <button data-play="skill">Kỹ năng · K</button></div>
 </dialog>
+<!-- MAP_STUDIO_GAME_DATA -->
 <script>
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');
 let mapPrompt = '';
+let regions = [];
 let visualStyle = 'daylight';
 let strokes = [];
 let blank = false;
@@ -185,6 +210,8 @@ function restore(data) {
   $('theme').value = theme;
   $('level').value = level;
   mapPrompt = data.prompt || '';
+  regions = data.regions || [{name:'Khu đầu',x:0,width:data.width,biome:'base'}];
+  refreshRegions();
   $('prompt').value = mapPrompt;
   const width = $('width');
   width.querySelector('[data-imported]')?.remove();
@@ -250,34 +277,116 @@ $('visualStyle').onchange = () => {
   render();
   status(background || blank ? 'Tạo hình đã lưu cho lần bố trí map tiếp theo.' : 'Đã cập nhật tạo hình bản đồ.');
 };
-function make(){
-activeStroke = null;
-terrainDrag = null;
-blank = false;
-seed=Number($('seed').value)||1;theme=$('theme').value;level=Number($('level').value);const w=Number($('width').value),r=rng(seed);canvas.width=w;canvas.height=720;ground=[];objects=[];strokes=[];background=null;
-mapPrompt = $('prompt').value;
+function generateLayout(w, seed, theme, level, mapPrompt, biome = 'base') {
+const r = rng(seed);
+const terrain = [];
+const entities = [];
 const p = mapPrompt.normalize('NFC').toLowerCase();
-const density = /rừng|forest/.test(p) ? 1.5 : 1;
+const density = /rừng|forest/.test(p) ? 1.8 : 1;
 const cherry = /anh đào|cherry blossom/.test(p);
 const waterfall = /thác nước|waterfall/.test(p);
 const houseSpacing = /nhiều nhà|đông nhà/.test(p) ? .75 : /ít nhà|thưa nhà/.test(p) ? 1.5 : 1;
 const enemyMatch = p.match(/(?:^|[^\p{L}\d])(\d{1,6})\s+(?:con\s+)?quái(?!\p{L})/u);
 const enemyCount = /không (?:có )?quái/.test(p) ? 0
   : enemyMatch ? Math.min(100, Number(enemyMatch[1])) : Math.floor(w / 290);
-for(let x=0;x<w+40;x+=40){let y=548+Math.sin(x/260+seed)*28+Math.sin(x/110+seed)*12;ground.push({x,y})}
-for(let x=130;x<w-80;x+=rand(r,145,250)*houseSpacing){let y=surface(x);objects.push({type:'house',x,y,w:rand(r,100,180),h:rand(r,100,175),variant:Math.floor(rand(r,0,4))})}
-for(let i=0;i<Math.floor(w/90*density);i++){let x=rand(r,20,w-20);objects.push({type:r()<.75?'tree':'rock',x,y:surface(x),scale:rand(r,.7,1.35),variant:Math.floor(rand(r,0,3)),...(cherry?{cherry:true}:{})})}
-for(let i=0;i<enemyCount;i++){let x=rand(r,90,w-90);objects.push({type:'enemy',x,y:surface(x),lv:level+Math.floor(rand(r,0,level===1?5:7))})}
-objects.push({type:'npc',x:80,y:surface(80),name:theme==='ninja'?'Trưởng làng':'Đạo trưởng'});
-if (waterfall) objects.push({type:'waterfall',x:w*.7,y:surface(w*.7)});
-if(p.includes('cầu'))objects.push({type:'bridge',x:w*.55,y:surface(w*.55)});
-render();
+for(let x=0;x<w+40;x+=40){let y=548+Math.sin(x/260+seed)*(biome==='ridge'?54:28)+Math.sin(x/110+seed)*12;terrain.push({x,y})}
+for(let x=130;biome!=='ridge' && x<w-80;x+=rand(r,145,250)*houseSpacing){let y=heightAt(terrain,x);entities.push({type:'house',x,y,w:rand(r,100,180),h:rand(r,100,175),variant:Math.floor(rand(r,0,4))})}
+for(let i=0;i<Math.floor(w/90*density);i++){let x=rand(r,20,w-20);entities.push({type:r()<(biome==='ridge'?.26:.75)?'tree':'rock',x,y:heightAt(terrain,x),scale:rand(r,.7,1.35),variant:Math.floor(rand(r,0,3)),...(cherry?{cherry:true}:{})})}
+for(let i=0;i<enemyCount;i++){let x=rand(r,90,w-90);entities.push({type:'enemy',x,y:heightAt(terrain,x),lv:level+Math.floor(rand(r,0,level===1?5:7))})}
+if (biome === 'base' || biome === 'village') entities.push({type:'npc',x:80,y:heightAt(terrain,80),name:theme==='ninja'?'Trưởng làng':'Đạo trưởng'});
+if (waterfall) entities.push({type:'waterfall',x:w*.7,y:heightAt(terrain,w*.7)});
+if(p.includes('cầu'))entities.push({type:'bridge',x:w*.55,y:heightAt(terrain,w*.55)});
+
 const applied = [waterfall && 'Thác nước', cherry && 'Anh đào',
   houseSpacing < 1 && 'Nhiều nhà', houseSpacing > 1 && 'Ít nhà',
   (enemyMatch || enemyCount === 0) && enemyCount + ' quái'].filter(Boolean);
-syncAnimationEditor();
-status('Đã tạo ' + objects.length + ' đối tượng · Seed ' + seed + (applied.length ? ' · ' + applied.join(', ') : ''));}
-function surface(x){let i=Math.max(0,Math.min(ground.length-2,Math.floor(x/40))),a=ground[i],b=ground[i+1];return a.y+(b.y-a.y)*(x-a.x)/40}
+return {terrain,entities,applied};
+}
+function make() {
+  activeStroke = null;
+  terrainDrag = null;
+  blank = false;
+  seed = Number($('seed').value) || 1;
+  theme = $('theme').value;
+  level = Number($('level').value);
+  mapPrompt = $('prompt').value;
+  const width = Number($('width').value);
+  const {terrain,entities,applied} = generateLayout(width,seed,theme,level,mapPrompt);
+  canvas.width = width;
+  canvas.height = 720;
+  ground = terrain;
+  objects = entities;
+  regions = [{name:'Khu đầu',x:0,width,biome:'base'}];
+  strokes = [];
+  background = null;
+  refreshRegions();
+  render();
+  syncAnimationEditor();
+  status('Đã tạo ' + objects.length + ' đối tượng · Seed ' + seed + (applied.length ? ' · ' + applied.join(', ') : ''));
+}
+const regionPresets = {
+  village: 'làng nhiều nhà, cầu',
+  forest: 'rừng, ít nhà',
+  waterfall: 'thác nước, cầu, ít nhà',
+  ridge: 'đồi đá'
+};
+function refreshRegions() {
+  const select = $('regionList');
+  const previous = select.value;
+  select.replaceChildren(...regions.map((region,index) => new Option(region.name + ' · ' + region.x + '–' + (region.x+region.width) + ' px',index)));
+  if (previous !== '' && regions[Number(previous)]) select.value = previous;
+}
+$('addRegion').onclick = () => {
+  if (blank || background) { status('Tạo bản đồ bố trí đối tượng trước khi ghép khu vực.'); return; }
+  const start = canvas.width;
+  const width = Number($('regionWidth').value);
+  if (![800,1200,1600,2400].includes(width) || start + width > 10000) {
+    status('Tổng chiều dài bản đồ tối đa 10.000 px.');
+    return;
+  }
+  const biome = $('regionBiome').value;
+  const name = $('regionName').value.trim() || 'Khu ' + (regions.length+1);
+  const description = $('regionPrompt').value + ', ' + regionPresets[biome];
+  const {terrain,entities} = generateLayout(width,seed + regions.length*7919,theme,level,description,biome);
+  const oldGround = ground;
+  const oldHeight = surface(start);
+  const nextGround = [];
+  for (let x=0; x<start+width+40; x+=40) {
+    if (x <= start) {
+      nextGround.push({x,y:heightAt(oldGround,x)});
+    } else {
+      const distance = x-start;
+      const blend = Math.min(1,distance/280);
+      const elevation = heightAt(terrain,distance) + (oldHeight-terrain[0].y)*(1-blend);
+      nextGround.push({x,y:Math.max(32,Math.min(canvas.height-24,elevation))});
+    }
+  }
+  remember();
+  canvas.width = start+width;
+  ground = nextGround;
+  objects = objects.concat(entities.map(entity => ({...entity,x:entity.x+start,y:surface(entity.x+start)})));
+  regions = regions.concat({name,x:start,width,biome});
+  refreshRegions();
+  $('regionList').value = String(regions.length-1);
+  fitMap();
+  render();
+  status('Đã nối khu ' + name + ' vào cuối bản đồ.');
+};
+$('visitRegion').onclick = () => {
+  const region = regions[Number($('regionList').value)];
+  if (!region) return;
+  fitMode = false;
+  const regionZoom = Math.min(1, Math.max(1,viewport.clientWidth-32)/region.width);
+  resizeMap(regionZoom,false);
+  viewport.scrollLeft = Math.max(0,region.x*regionZoom);
+  status('Đang xem ' + region.name + '.');
+};
+function surface(x) { return heightAt(ground,x); }
+function heightAt(points,x) {
+  const i = Math.max(0,Math.min(points.length-2,Math.floor(x/40)));
+  const a = points[i], b = points[i+1];
+  return a.y+(b.y-a.y)*(x-a.x)/40;
+}
 function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
 function polygon(points,color){ctx.fillStyle=color;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fill()}
 function render(showActors = true, showGuides = true){
@@ -525,11 +634,12 @@ if(o.type==='enemy'||o.type==='npc'){
     paintSprite(ctx, sprite, o.animations.idle, 0, x, y, 100);
     return;
   }
+  if (paintRig(ctx,o.rig,'idle',0,x,y,100)) return;
   ellipse(x,y-28,17,23,o.type==='npc'?'#5a77d9':'#b85762');ellipse(x,y-57,14,15,'#f2c39d');ctx.fillStyle='#172237';ctx.fillRect(x-13,y-72,26,8);ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillText(o.type==='npc'?(o.name||'NPC'):'Lv '+(o.lv||1),x,y-85)}
 if(o.type==='bridge'){ctx.fillStyle='#875e44';ctx.fillRect(x-90,y-12,180,14);for(let i=-80;i<=80;i+=25)ctx.fillRect(x+i,y-36,6,25)}
 }
 function download(name,blob){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)}
-function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects,strokes,blank,visualStyle}}
+function project(){return {format:'thien-dao-ai-map-v3',version:3,seed,theme,level,width:canvas.width,height:canvas.height,prompt:mapPrompt,ground,objects,strokes,blank,visualStyle,regions}}
 $('generate').onclick = () => { remember(); make(); fitMap(); };
 $('random').onclick = () => {
   remember();
@@ -543,7 +653,7 @@ $('png').onclick = () => {
   if ($('tool').value === 'terrain') render();
 };
 $('json').onclick=()=>download('thien-dao-map-v3.json',new Blob([JSON.stringify(project(),null,2)],{type:'application/json'}));
-$('godot').onclick=()=>{const data=project();data.godot={engine:'Godot 4',coordinate_system:'pixels',ground_collision_polyline:ground.map(p=>[p.x,p.y]),one_way_platforms:objects.filter(o=>o.type==='platform').map(o=>({from:[o.x-o.w/2,o.y],to:[o.x+o.w/2,o.y]})),entities:objects.map(o=>({node_type:o.type,position:[o.x,o.y],properties:o}))};download('godot-map-data.json',new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))};
+$('godot').onclick=()=>{const data=project();data.godot={engine:'Godot 4',coordinate_system:'pixels',regions:data.regions,ground_collision_polyline:ground.map(p=>[p.x,p.y]),one_way_platforms:objects.filter(o=>o.type==='platform').map(o=>({from:[o.x-o.w/2,o.y],to:[o.x+o.w/2,o.y]})),entities:objects.map(o=>({node_type:o.type,position:[o.x,o.y],properties:o}))};download('godot-map-data.json',new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))};
 $('save').onclick=$('json').onclick;$('load').onclick=()=>$('file').click();
 $('file').onchange = async event => {
   try {
@@ -560,12 +670,17 @@ $('file').onchange = async event => {
       && ['house', 'tree', 'rock', 'enemy', 'npc', 'bridge', 'waterfall', 'platform'].includes(object.type)
       && (object.type !== 'platform' || (Number.isFinite(object.w) && object.w >= 40 && object.w <= 600))
       && (object.scale === undefined || (Number.isFinite(object.scale) && object.scale > 0))
-      && validAnimations(object.animations));
+      && validAnimations(object.animations) && validRig(object.rig));
     const validStrokes = data.strokes === undefined || (Array.isArray(data.strokes) && data.strokes.every(stroke =>
       /^#[0-9a-f]{6}$/i.test(stroke?.color) && Number.isFinite(stroke.size) && stroke.size >= 1 && stroke.size <= 128
       && Array.isArray(stroke.points) && stroke.points.length > 0
       && stroke.points.every(point => Number.isFinite(point?.x) && Number.isFinite(point.y))));
-    if (data.format !== 'thien-dao-ai-map-v3' || !validSize || !validGround || !validObjects || !validStrokes) {
+    const validRegions = data.regions === undefined || (Array.isArray(data.regions) && data.regions.length > 0
+      && data.regions.every((region,index) => region && typeof region.name === 'string' && region.name.length <= 60
+        && Number.isInteger(region.width) && region.width > 0
+        && region.x === (index === 0 ? 0 : data.regions[index-1].x + data.regions[index-1].width))
+      && data.regions.at(-1).x + data.regions.at(-1).width === data.width);
+    if (data.format !== 'thien-dao-ai-map-v3' || !validSize || !validGround || !validObjects || !validStrokes || !validRegions) {
       throw new Error('Định dạng dự án không hợp lệ');
     }
     remember();
@@ -706,6 +821,132 @@ canvas.addEventListener('pointerdown', event => {
 });
 $('aiImage').onclick=async()=>{const url=$('endpoint').value.trim();if(!url||!/^https:\/\//i.test(url)){status('Nhập URL endpoint HTTPS hợp lệ trước khi tạo ảnh.');return}const requestedRevision = revision;const btn=$('aiImage');btn.disabled=true;status('Đang yêu cầu backend tạo ảnh HD...');try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:'Vẽ hoàn chỉnh một bản đồ game 2.5D đi cảnh chiều ngang. Lấp đầy toàn bộ khung hình bằng phong cảnh, địa hình chơi được và các chi tiết trong mô tả. Giữ góc nhìn ngang nhất quán, tách lớp cận cảnh, trung cảnh và hậu cảnh. Dùng phối cảnh không khí, vật liệu có kết cấu và bóng đổ thống nhất. Chừa hành lang di chuyển rõ ràng gần phần dưới khung hình. Không chèn chữ, giao diện hoặc khung viền. Ánh sáng: '+($('visualStyle').value==='sunset'?'hoàng hôn':'ban ngày')+'. Mô tả: '+$('prompt').value,style:$('theme').value,width:canvas.width,height:canvas.height})});if(!response.ok)throw Error('HTTP '+response.status);const d=await response.json();const src=d.image_url||(d.image_base64?'data:image/png;base64,'+d.image_base64:null);if(!src)throw Error('Backend phải trả image_url hoặc image_base64');const img=new Image();img.crossOrigin='anonymous';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Không tải được ảnh; kiểm tra CORS và URL'));img.src=src});if (requestedRevision !== revision) { status('Bản đồ đã thay đổi. Hãy tạo lại ảnh nền HD.'); return; } remember();background=img;selectBrush();render();status('AI đã vẽ toàn bộ bản đồ. Có thể vẽ thêm bằng cọ và xuất PNG để giữ ảnh AI.')}catch(err){status('Tạo ảnh thất bại: '+err.message)}finally{btn.disabled=false}};
 
+
+function validRig(rig) {
+  return rig === undefined || (rig && typeof rig.data === 'string' && rig.data.length <= 2_900_000
+    && /^data:image\/png;base64,[a-z0-9+/]+=*$/i.test(rig.data));
+}
+function segmentCharacter(image,tolerance) {
+  const work = document.createElement('canvas');
+  const scale = Math.min(1,540/Math.max(image.naturalWidth,image.naturalHeight));
+  const w = work.width = Math.max(1,Math.round(image.naturalWidth*scale));
+  const h = work.height = Math.max(1,Math.round(image.naturalHeight*scale));
+  const art = work.getContext('2d',{willReadFrequently:true});
+  art.drawImage(image,0,0,w,h);
+  const pixels = art.getImageData(0,0,w,h);
+  const {data} = pixels;
+  const edges = [0,w-1,(h-1)*w,h*w-1];
+  if (edges.every(index => data[index*4+3] > 220)) {
+    const backgroundSamples = edges.map(index => Array.from(data.slice(index*4,index*4+3)));
+    const seen = new Uint8Array(w*h);
+    const queue = new Int32Array(w*h);
+    let head = 0;
+    let tail = 0;
+    function visit(index) {
+      if (seen[index]) return;
+      seen[index] = 1;
+      const pixel = index*4;
+      if (!backgroundSamples.some(sample => Math.max(...sample.map((channel,i) => Math.abs(channel-data[pixel+i]))) <= tolerance)) return;
+      data[pixel+3] = 0;
+      queue[tail++] = index;
+    }
+    for (let x=0;x<w;x++) { visit(x); visit((h-1)*w+x); }
+    for (let y=0;y<h;y++) { visit(y*w); visit(y*w+w-1); }
+    while (head<tail) {
+      const index = queue[head++];
+      const x=index%w, y=Math.floor(index/w);
+      if (x>0) visit(index-1);
+      if (x<w-1) visit(index+1);
+      if (y>0) visit(index-w);
+      if (y<h-1) visit(index+w);
+    }
+  }
+  let left=w,top=h,right=-1,bottom=-1;
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+    if (data[(y*w+x)*4+3]<45) continue;
+    left=Math.min(left,x); right=Math.max(right,x);
+    top=Math.min(top,y); bottom=Math.max(bottom,y);
+  }
+  if (right-left<15 || bottom-top<28) throw Error('Không tìm được dáng nhân vật. Thử giảm mức tách nền hoặc dùng PNG trong suốt.');
+  art.putImageData(pixels,0,0);
+  const crop=document.createElement('canvas');
+  crop.width=right-left+1;
+  crop.height=bottom-top+1;
+  crop.getContext('2d').drawImage(work,left,top,crop.width,crop.height,0,0,crop.width,crop.height);
+  return {data:crop.toDataURL('image/png')};
+}
+function paintRig(target,rig,action,seconds,x,feet,height) {
+  const image=loadedSprite(rig);
+  if (!image) return false;
+  const w=image.naturalWidth, h=image.naturalHeight;
+  const scale=Math.min(height/h,height*1.35/w);
+  const walking=action==='move';
+  const stride=Math.sin(seconds*Math.PI*3.8);
+  const impulse=Math.sin(Math.PI*Math.min(1,Math.max(0,seconds)/.42));
+  const motion=walking?stride:impulse;
+  const attack=action==='attack'||action==='skill';
+  const lean=walking?.055:attack?.16*impulse:action==='hit'?-.15*impulse:0;
+  const bob=walking?Math.abs(stride)*h*.045:Math.sin(seconds*4)*h*.013;
+  target.save();
+  target.translate(x,feet);
+  target.scale(scale,scale);
+  target.rotate(lean);
+  target.translate(-w*.5,-h-bob);
+  function part(x1,y1,x2,y2,px,py,angle) {
+    const sx=w*x1, sy=h*y1, width=w*(x2-x1), height=h*(y2-y1);
+    target.save();
+    target.translate(w*px,h*py);
+    target.rotate(angle);
+    target.drawImage(image,sx,sy,width,height,sx-w*px,sy-h*py,width,height);
+    target.restore();
+  }
+  part(0,.58,.5,1,.42,.59,walking?motion*.28:0);
+  part(.5,.58,1,1,.58,.59,walking?-motion*.28:0);
+  part(0,.23,.29,.58,.29,.28,walking?-motion*.25:attack?-.37*motion:0);
+  part(.71,.23,1,.58,.71,.28,walking?motion*.25:attack?-1.05*motion:0);
+  part(.29,.23,.71,.58,.5,.54,0);
+  part(0,0,1,.23,.5,.22,walking?-motion*.045:action==='hit'?.18*motion:0);
+  target.restore();
+  return true;
+}
+$('rigFile').onchange = event => {
+  const input=event.target;
+  const file=input.files[0];
+  const actor=selectedActor();
+  const pickedRevision=revision;
+  input.value='';
+  if (!file || !actor) return;
+  const label=$('animationStatus');
+  if (!['image/png','image/jpeg','image/webp'].includes(file.type) || file.size>8*1024*1024) {
+    label.value='Chọn ảnh PNG, JPEG hoặc WebP tối đa 8 MB.';
+    return;
+  }
+  const source=URL.createObjectURL(file);
+  const image=new Image();
+  image.onerror=() => { URL.revokeObjectURL(source); label.value='Không đọc được ảnh toàn thân.'; };
+  image.onload=() => {
+    URL.revokeObjectURL(source);
+    if (pickedRevision!==revision || selectedActor()!==actor) return;
+    try {
+      const rig=segmentCharacter(image,Number($('rigTolerance').value)||34);
+      remember();
+      objects[Number($('actor').value)]={...actor,rig};
+      render();
+      paintPreview(0);
+      label.value='Đã tách nền và chia 6 vùng. Chọn động tác rồi bấm Xem động tác.';
+    } catch(error) { label.value=error.message; }
+  };
+  image.src=source;
+};
+$('removeRig').onclick = () => {
+  const actor=selectedActor();
+  if (!actor?.rig) return;
+  remember();
+  const {rig,...rest}=actor;
+  objects[Number($('actor').value)]=rest;
+  render();
+  syncAnimationEditor();
+};
 const actionNames = ['idle', 'move', 'attack', 'skill', 'hit'];
 const effectNames = ['wave', 'fire', 'slash'];
 const preview = $('animationPreview');
@@ -747,7 +988,7 @@ function refreshActors() {
     if (entries.some(([index]) => String(index) === previous)) select.value = previous;
     if (!entries.length) select.add(new Option('Chưa có NPC hoặc quái', ''));
   }
-  for (const name of ['action', 'spriteFile', 'spriteFrames', 'spriteFps', 'skillEffect', 'playAction']) {
+  for (const name of ['action', 'spriteFile', 'spriteFrames', 'spriteFps', 'skillEffect', 'playAction', 'rigFile', 'removeRig']) {
     $(name).disabled = !selectedActor();
   }
 }
@@ -797,7 +1038,7 @@ function paintPreview(seconds) {
   const action = $('action').value;
   const clip = currentClip();
   const fallback = actor.animations?.idle;
-  const spriteClip = clip.source ? clip : fallback;
+  const spriteClip = clip.source ? clip : actor.rig ? null : fallback;
   const image = loadedSprite(spriteClip?.source);
   const phase = seconds % 1.2 / 1.2;
   const pulse = Math.sin(Math.PI * phase);
@@ -806,7 +1047,7 @@ function paintPreview(seconds) {
     : action === 'hit' ? 140 - 14 * pulse : 140;
   const feet = 127 - (action === 'move' ? Math.abs(Math.sin(phase * Math.PI * 4)) * 8 : 3 * pulse);
   if (image) paintSprite(target, image, spriteClip, seconds, x, feet, 90);
-  else {
+  else if (!paintRig(target,actor.rig,action,action==='move'||action==='idle'?seconds:seconds%1.2,x,feet,90)) {
     target.fillStyle = actor.type === 'enemy' ? '#b85762' : '#6887ef';
     target.fillRect(x - 17, feet - 47, 34, 46);
     target.fillStyle = '#f2c39d';
@@ -834,7 +1075,7 @@ function syncAnimationEditor() {
   $('spriteFrames').value = clip.frames;
   $('spriteFps').value = clip.fps;
   $('skillEffect').value = clip.effect;
-  $('animationStatus').value = clip.source ? 'Đã gán ảnh cho động tác này.' : 'Chưa gán ảnh riêng cho động tác này.';
+  $('animationStatus').value = clip.source ? 'Đã gán ảnh cho động tác này.' : selectedActor()?.rig ? 'Động tác dùng ảnh đã chia vùng tự động.' : 'Chưa gán ảnh riêng cho động tác này.';
   paintPreview(0);
 }
 function saveClip(patch) {
@@ -1058,13 +1299,13 @@ function paintFighter(fighter, isPlayer) {
   const seconds = match.now - fighter.actionSince;
   const actualAction = match.now < fighter.hurtUntil ? 'hit' : fighter.action;
   const clip = actor?.animations?.[actualAction];
-  const spriteClip = clip?.source ? clip : actor?.animations?.idle;
+  const spriteClip = clip?.source ? clip : actor?.rig ? null : actor?.animations?.idle;
   const sprite = loadedSprite(spriteClip?.source);
   playCtx.save();
   playCtx.translate(x, y);
   playCtx.scale(facing, 1);
   if (sprite) paintSprite(playCtx, sprite, spriteClip, seconds, 0, 0, 96);
-  else {
+  else if (!paintRig(playCtx,actor?.rig,actualAction,actualAction==='hit'?match.now-(fighter.hurtUntil-.23):seconds,0,0,96)) {
     const bob = actualAction === 'move' ? Math.abs(Math.sin(match.now * 16)) * 7 : 0;
     const reach = actualAction === 'attack' ? 14 : 0;
     playCtx.fillStyle = isPlayer ? '#526de1' : '#bd506a';
@@ -1148,6 +1389,33 @@ $('testMap').onclick = () => {
   playDialog.showModal();
   startMatch();
 };
+$('exportGame').onclick = async () => {
+  const button=$('exportGame');
+  button.disabled=true;
+  try {
+    const data=project();
+    const chosen=selectedActor();
+    const playerIndex=chosen?.type==='npc'?objects.indexOf(chosen):-1;
+    let backdrop=null;
+    if (background) {
+      const imageCanvas=document.createElement('canvas');
+      imageCanvas.width=canvas.width;
+      imageCanvas.height=canvas.height;
+      imageCanvas.getContext('2d').drawImage(background,0,0,canvas.width,canvas.height);
+      backdrop=imageCanvas.toDataURL('image/png');
+    }
+    const response=await fetch(location.href);
+    if (!response.ok) throw Error('Không tải được mã màn chơi.');
+    const source=await response.text();
+    const marker='<!-- MAP_STUDIO_'+'GAME_DATA -->';
+    if (!source.includes(marker)) throw Error('Hãy tải lại trang rồi xuất game.');
+    const serialized=JSON.stringify({data,playerIndex,backdrop}).replaceAll('<','\\u003c');
+    const game=source.replace(marker,()=>'<script type="application/json" id="exportedGameData">'+serialized+'<'+'/script>');
+    download('thien-dao-game.html',new Blob([game],{type:'text/html;charset=utf-8'}));
+    status('Đã xuất game HTML. Mở tệp để chơi.');
+  } catch(error) { status('Lỗi xuất game: '+error.message); }
+  finally { button.disabled=false; }
+};
 $('restartTest').onclick = startMatch;
 $('showCollision').onchange = () => { if (match) paintMatch(); };
 $('closeTest').onclick = () => playDialog.close();
@@ -1182,7 +1450,27 @@ for (const button of playDialog.querySelectorAll('[data-play]')) {
   });
 }
 
-make();
-fitMap();
-syncAnimationEditor();
+
+const exportedGame = $('exportedGameData')?.textContent;
+if (exportedGame) {
+  document.body.classList.add('game-export');
+  const {data,playerIndex,backdrop}=JSON.parse(exportedGame);
+  restore(data);
+  if (playerIndex>=0) $('actor').value=String(playerIndex);
+  playDialog.addEventListener('cancel',event=>event.preventDefault());
+  const openGame=()=>{
+    playDialog.showModal();
+    startMatch();
+  };
+  if (backdrop) {
+    const image=new Image();
+    image.onload=()=>{background=image;openGame();};
+    image.onerror=openGame;
+    image.src=backdrop;
+  } else openGame();
+} else {
+  make();
+  fitMap();
+  syncAnimationEditor();
+}
 </script></body></html>
