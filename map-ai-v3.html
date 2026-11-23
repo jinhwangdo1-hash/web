@@ -60,6 +60,9 @@ button:disabled { opacity: .45; cursor: default; }
 
 body.game-export > header, body.game-export > .app, body.game-export #closeTest { display: none; }
 body.game-export { background: #040816; }
+
+.model3d-panel canvas { display:block; width:100%; height:auto; max-height:none; border-radius:8px; cursor:default; touch-action:auto; box-shadow:none; }
+.model3d-panel output { display:block; margin-block:8px; }
 </style></head><body>
 <header><div><strong>✦ THIÊN ĐẠO · AI MAP STUDIO V3</strong><br><small>AI bố trí map miễn phí · Ninja & Tu tiên · Xuất Godot 4</small></div><div><a href="map-hd.html">Map Studio V2</a> · <a href="index.html">Trang chủ</a></div></header>
 <div class="app"><aside>
@@ -73,6 +76,16 @@ body.game-export { background: #040816; }
 <div class="row"><div><label for="level">Cấp quái</label><select id="level"><option value="1">Lv 1–5</option><option value="6">Lv 6–12</option><option value="13">Lv 13–20</option><option value="21">Lv 21–30</option></select></div><div><label for="width">Chiều dài</label><select id="width"><option value="1600">Ngắn</option><option value="2400" selected>Trung bình</option><option value="3600">Dài</option><option value="4800">Rất dài</option></select></div></div>
 <label for="seed">Seed (để tạo lại cùng map)</label><input id="seed" type="number" value="2027">
 <div class="row" style="margin-top:12px"><button class="primary" id="generate">✨ AI bố trí map</button><button id="random">🎲 Seed mới</button></div>
+<details class="region-panel model3d-panel" id="modelPanel">
+<summary>Tạo nhân vật 3D từ ảnh</summary>
+<p class="note">Dùng ảnh toàn thân nền trơn hoặc trong suốt. Ảnh được xử lý ngay trên thiết bị. Mặt sau được dựng theo đường viền ảnh.</p>
+<label for="modelPhoto">Ảnh nhân vật</label><input id="modelPhoto" type="file" accept="image/png,image/jpeg,image/webp">
+<label for="modelDepth">Độ dày</label><input id="modelDepth" type="range" min="10" max="55" value="27">
+<label for="modelAngle">Góc xoay</label><input id="modelAngle" type="range" min="-180" max="180" value="22">
+<div class="row"><button id="modelMotion" disabled aria-pressed="false">Thử chuyển động</button><button id="modelSave" disabled>Tải GLB</button></div>
+<output id="modelStatus" aria-live="polite"></output>
+<canvas id="modelPreview" width="300" height="280" aria-label="Xem trước nhân vật 3D"></canvas>
+</details>
 <details class="region-panel">
 <summary>Ghép map theo khu vực</summary>
 <label for="regionName">Tên khu mới</label><input id="regionName" maxlength="60" placeholder="Ví dụ: Rừng sau làng">
@@ -1450,6 +1463,245 @@ for (const button of playDialog.querySelectorAll('[data-play]')) {
   });
 }
 
+
+
+const modelPreview=$('modelPreview');
+const modelCtx=modelPreview.getContext('2d');
+let modelRaster=null;
+let characterModel=null;
+let modelFrame=null;
+let modelRequest=0;
+
+function rasterForModel(image) {
+  const scratch=document.createElement('canvas');
+  const size=Math.min(1,54/Math.max(image.naturalWidth,image.naturalHeight));
+  const width=scratch.width=Math.max(1,Math.round(image.naturalWidth*size));
+  const height=scratch.height=Math.max(1,Math.round(image.naturalHeight*size));
+  const raster=scratch.getContext('2d',{willReadFrequently:true});
+  raster.drawImage(image,0,0,width,height);
+  return raster.getImageData(0,0,width,height);
+}
+function meshFromRaster({width,height,data},depth) {
+  const solid=(x,y)=>x>=0&&x<width&&y>=0&&y<height&&data[(y*width+x)*4+3]>=115;
+  const distance=new Uint16Array(width*height);
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+    if(!solid(x,y)) continue;
+    const i=y*width+x;
+    distance[i]=Math.min(x?distance[i-1]:0,y?distance[i-width]:0)+1;
+  }
+  for(let y=height-1;y>=0;y--) for(let x=width-1;x>=0;x--) {
+    if(!solid(x,y)) continue;
+    const i=y*width+x;
+    distance[i]=Math.min(distance[i],(x+1<width?distance[i+1]:0)+1,(y+1<height?distance[i+width]:0)+1);
+  }
+  const positions=[];
+  const colors=[];
+  const motion=[];
+  const faces=[];
+  const step=2/height;
+  function vertex(x,y,sign) {
+    let total=0;
+    let count=0;
+    for(const dx of [-1,0]) for(const dy of [-1,0]) {
+      if(solid(x+dx,y+dy)){total+=distance[(y+dy)*width+x+dx];count++;}
+    }
+    const upl=.47+.53*Math.min(1,(count?total/count:0)/6);
+    return [(x-width/2)*step,(height-y)*step,sign*depth*upl];
+  }
+  function face(corners,color) {
+    faces.push({corners,color});
+    for(const index of [0,1,2,0,2,3]) {
+      const [x,y,z]=corners[index];
+      positions.push(x,y,z);
+      colors.push(...color.map(byte=>byte/255));
+      const leg=Math.max(0,1-y/.95);
+      const side=Math.max(-1,Math.min(1,x/.24));
+      motion.push(y*.025,leg*.035,side*leg*.19);
+    }
+  }
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+    if(!solid(x,y)) continue;
+    const i=(y*width+x)*4;
+    const color=Array.from(data.slice(i,i+3));
+    const outline=[[x,y],[x,y+1],[x+1,y+1],[x+1,y]];
+    const front=outline.map(([u,v])=>vertex(u,v,1));
+    const back=outline.map(([u,v])=>vertex(u,v,-1));
+    const shade=amount=>color.map(byte=>Math.round(byte*amount));
+    face(front,color);
+    face([back[3],back[2],back[1],back[0]],shade(.67));
+    const sides=[[-1,0],[0,1],[1,0],[0,-1]];
+    sides.forEach(([dx,dy],index)=>{
+      if(solid(x+dx,y+dy)) return;
+      const next=(index+1)%4;
+      face([front[next],front[index],back[index],back[next]],shade(index===3?.81:.61));
+    });
+  }
+  if (!positions.length) throw Error('Không còn hình nhân vật sau khi tách nền.');
+  return {positions,colors,motion,faces};
+}
+
+function paintModel(seconds=0) {
+  const {width,height}=modelPreview;
+  modelCtx.fillStyle='#121c30';
+  modelCtx.fillRect(0,0,width,height);
+  modelCtx.strokeStyle='#415472';
+  modelCtx.beginPath();
+  modelCtx.moveTo(28,height-26);
+  modelCtx.lineTo(width-28,height-26);
+  modelCtx.stroke();
+  if(!characterModel) return;
+  const yaw=Number($('modelAngle').value)*Math.PI/180;
+  const tilt=.18;
+  const cos=Math.cos(yaw);
+  const sin=Math.sin(yaw);
+  const amplitude=Math.sin(seconds*Math.PI*2);
+  const rendered=[];
+  for(const face of characterModel.faces) {
+    const points=face.corners.map(([x,y,z])=>{
+      const leg=Math.max(0,1-y/.95);
+      const side=Math.max(-1,Math.min(1,x/.24));
+      x+=y*.025*amplitude;
+      y+=leg*.035*amplitude;
+      z+=side*leg*.19*amplitude;
+      const a=x*cos+z*sin;
+      const b=z*cos-x*sin;
+      const zoom=Math.min(width*.32,height*.38);
+      return [width/2+a*zoom,height-30-(y*Math.cos(tilt)-b*Math.sin(tilt))*zoom,
+        b*Math.cos(tilt)+y*Math.sin(tilt)];
+    });
+    const [a,b,c]=points;
+    if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>=0) continue;
+    rendered.push({points,color:face.color,z:points.reduce((sum,point)=>sum+point[2],0)/4});
+  }
+  rendered.sort((a,b)=>a.z-b.z);
+  for(const {points,color} of rendered) {
+    modelCtx.beginPath();
+    points.forEach(([x,y],index)=>index?modelCtx.lineTo(x,y):modelCtx.moveTo(x,y));
+    modelCtx.closePath();
+    modelCtx.fillStyle='rgb('+color.join(',')+')';
+    modelCtx.fill();
+  }
+}
+function rebuildModel() {
+  characterModel=meshFromRaster(modelRaster,Number($('modelDepth').value)/100);
+  $('modelSave').disabled=false;
+  $('modelMotion').disabled=false;
+  paintModel();
+}
+function stopModelMotion() {
+  if(modelFrame!==null) cancelAnimationFrame(modelFrame);
+  modelFrame=null;
+  $('modelMotion').setAttribute('aria-pressed','false');
+}
+$('modelPhoto').onchange=event=>{
+  const file=event.target.files[0];
+  event.target.value='';
+  if(!file) return;
+  const request=++modelRequest;
+  const label=$('modelStatus');
+  if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024) {
+    label.value='Chọn ảnh PNG, JPEG hoặc WebP tối đa 8 MB.';
+    return;
+  }
+  label.value='Đang tách nền và dựng mô hình.';
+  const url=URL.createObjectURL(file);
+  const image=new Image();
+  image.onerror=()=>{
+    URL.revokeObjectURL(url);
+    if(request===modelRequest) label.value='Không đọc được ảnh.';
+  };
+  image.onload=()=>{
+    URL.revokeObjectURL(url);
+    if(request!==modelRequest) return;
+    try {
+      const cutout=segmentCharacter(image,34);
+      const texture=new Image();
+      texture.onerror=()=>{if(request===modelRequest) label.value='Không đọc được ảnh sau khi tách nền.';};
+      texture.onload=()=>{
+        if(request!==modelRequest) return;
+        try {
+          const nextRaster=rasterForModel(texture);
+          const nextModel=meshFromRaster(nextRaster,Number($('modelDepth').value)/100);
+          stopModelMotion();
+          modelRaster=nextRaster;
+          characterModel=nextModel;
+          $('modelSave').disabled=false;
+          $('modelMotion').disabled=false;
+          paintModel();
+          label.value='Đã dựng mô hình. Kéo Góc xoay để xem các mặt, hoặc tải GLB.';
+        } catch(error) { label.value=error.message; }
+      };
+      texture.src=cutout.data;
+    } catch(error) { label.value=error.message; }
+  };
+  image.src=url;
+};
+$('modelDepth').oninput=()=>{if(modelRaster) rebuildModel();};
+$('modelAngle').oninput=()=>{if(modelFrame===null) paintModel();};
+$('modelPanel').ontoggle=()=>{if(!$('modelPanel').open) stopModelMotion(); else paintModel();};
+$('modelMotion').onclick=()=>{
+  if(modelFrame!==null){stopModelMotion();paintModel();return;}
+  $('modelMotion').setAttribute('aria-pressed','true');
+  let started=null;
+  function frame(timestamp) {
+    started??=timestamp;
+    paintModel((timestamp-started)/1000);
+    modelFrame=requestAnimationFrame(frame);
+  }
+  modelFrame=requestAnimationFrame(frame);
+};
+
+function encodeGlb(model) {
+  const bounds=[Infinity,Infinity,Infinity];
+  const upper=[-Infinity,-Infinity,-Infinity];
+  const minMotion=bounds.slice();
+  const maxMotion=upper.slice();
+  for(let i=0;i<model.positions.length;i++) {
+    const axis=i%3;
+    bounds[axis]=Math.min(bounds[axis],model.positions[i]);
+    upper[axis]=Math.max(upper[axis],model.positions[i]);
+    minMotion[axis]=Math.min(minMotion[axis],model.motion[i]);
+    maxMotion[axis]=Math.max(maxMotion[axis],model.motion[i]);
+  }
+  const values=[model.positions,model.colors,model.motion,[0,.25,.5,.75,1],[0,1,0,-1,0]];
+  let byteLength=0;
+  const bufferViews=values.map((array,index)=>{
+    const view={buffer:0,byteOffset:byteLength,byteLength:array.length*4};
+    byteLength+=view.byteLength;
+    if(index<3) view.target=34962;
+    return view;
+  });
+  const accessors=values.map((array,index)=>({
+    bufferView:index,componentType:5126,count:index<3?array.length/3:array.length,type:index<3?'VEC3':'SCALAR'
+  }));
+  Object.assign(accessors[0],{min:bounds,max:upper});
+  Object.assign(accessors[2],{min:minMotion,max:maxMotion});
+  Object.assign(accessors[3],{min:[0],max:[1]});
+  const scene={
+    asset:{version:'2.0',generator:'Thiên Đạo Map Studio'},
+    extensionsUsed:['KHR_materials_unlit'],
+    scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0,name:'Nhân vật'}],
+    meshes:[{weights:[0],primitives:[{attributes:{POSITION:0,COLOR_0:1},targets:[{POSITION:2}],material:0}]}],
+    materials:[{doubleSided:true,extensions:{KHR_materials_unlit:{}}}],
+    animations:[{name:'Chuyển động thử',samplers:[{input:3,output:4,interpolation:'LINEAR'}],
+      channels:[{sampler:0,target:{node:0,path:'weights'}}]}],
+    accessors,bufferViews,buffers:[{byteLength}]
+  };
+  const json=new TextEncoder().encode(JSON.stringify(scene));
+  const jsonSize=Math.ceil(json.length/4)*4;
+  const output=new ArrayBuffer(28+jsonSize+byteLength);
+  const bytes=new Uint8Array(output);
+  const view=new DataView(output);
+  [[0,0x46546c67],[4,2],[8,output.byteLength],[12,jsonSize],[16,0x4e4f534a],
+    [20+jsonSize,byteLength],[24+jsonSize,0x004e4942]].forEach(([offset,value])=>view.setUint32(offset,value,true));
+  bytes.fill(32,20,20+jsonSize);
+  bytes.set(json,20);
+  values.forEach((array,index)=>array.forEach((value,i)=>view.setFloat32(28+jsonSize+bufferViews[index].byteOffset+i*4,value,true)));
+  return output;
+}
+$('modelSave').onclick=()=>{
+  if(characterModel) download('nhan-vat-3d.glb',new Blob([encodeGlb(characterModel)],{type:'model/gltf-binary'}));
+};
 
 const exportedGame = $('exportedGameData')?.textContent;
 if (exportedGame) {
